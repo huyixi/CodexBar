@@ -10,6 +10,7 @@ extension StatusItemController {
     private static let menuCardBaseWidth: CGFloat = 310
     private static let maxOverviewProviders = SettingsStore.mergedOverviewProviderLimit
     private static let overviewRowIdentifierPrefix = "overviewRow-"
+    private static let codexAccountCardIdentifierPrefix = "codexAccountCard-"
     private static let menuOpenRefreshDelay: Duration = .seconds(1.2)
     static let usageBreakdownChartID = "usageBreakdownChart"
     static let creditsHistoryChartID = "creditsHistoryChart"
@@ -73,6 +74,9 @@ extension StatusItemController {
         if Self.menuRefreshEnabled {
             self.scheduleOpenMenuRefresh(for: menu)
         }
+        if Self.menuRefreshEnabled, self.shouldRefreshCodexAccountCardsOnMenuOpen(menu) {
+            self.refreshCodexAccountCardsMenuIfNeeded(menu)
+        }
     }
 
     func menuDidClose(_ menu: NSMenu) {
@@ -124,14 +128,15 @@ extension StatusItemController {
             showAllTokenAccounts: showAllTokenAccounts)
 
         let hasTokenSwitcher = menu.items.contains { $0.view is TokenAccountSwitcherView }
-        let hasCodexSwitcher = menu.items.contains { $0.view is CodexAccountSwitcherView }
+        let hasCodexAccountCards = menu.items.contains { item in
+            (item.representedObject as? String)?.hasPrefix(Self.codexAccountCardIdentifierPrefix) == true
+        }
         let switcherProvidersMatch = enabledProviders == self.lastSwitcherProviders
         let switcherUsageBarsShowUsedMatch = self.settings.usageBarsShowUsed == self.lastSwitcherUsageBarsShowUsed
         let switcherSelectionMatches = switcherSelection == self.lastMergedSwitcherSelection
         let switcherOverviewAvailabilityMatches = includesOverview == self.lastSwitcherIncludesOverview
         let tokenSwitcherCompatible = tokenAccountDisplay == nil && !hasTokenSwitcher
-        let codexSwitcherCompatible = codexAccountDisplay == self.lastCodexAccountMenuDisplay &&
-            ((codexAccountDisplay == nil && !hasCodexSwitcher) || (codexAccountDisplay != nil && hasCodexSwitcher))
+        let codexAccountCardsCompatible = codexAccountDisplay == nil && !hasCodexAccountCards
         let canSmartUpdate = self.shouldMergeIcons &&
             enabledProviders.count > 1 &&
             !isOverviewSelected &&
@@ -140,7 +145,7 @@ extension StatusItemController {
             switcherSelectionMatches &&
             switcherOverviewAvailabilityMatches &&
             tokenSwitcherCompatible &&
-            codexSwitcherCompatible &&
+            codexAccountCardsCompatible &&
             !menu.items.isEmpty &&
             menu.items.first?.view is ProviderSwitcherView
 
@@ -178,8 +183,6 @@ extension StatusItemController {
             self.lastMergedSwitcherSelection = switcherSelection
             self.lastSwitcherIncludesOverview = includesOverview
         }
-        self.addCodexAccountSwitcherIfNeeded(to: menu, display: codexAccountDisplay)
-        self.lastCodexAccountMenuDisplay = codexAccountDisplay
         self.addTokenAccountSwitcherIfNeeded(to: menu, display: tokenAccountDisplay)
         let menuContext = MenuCardContext(
             currentProvider: currentProvider,
@@ -199,12 +202,18 @@ extension StatusItemController {
                 menu.addItem(.separator())
             }
         } else {
-            let addedOpenAIWebItems = self.addMenuCards(to: menu, context: menuContext)
-            self.addOpenAIWebItemsIfNeeded(
+            let addedCodexAccountCards = self.addCodexAccountCardsIfNeeded(
                 to: menu,
-                currentProvider: currentProvider,
-                context: openAIContext,
-                addedOpenAIWebItems: addedOpenAIWebItems)
+                display: codexAccountDisplay,
+                width: menuWidth)
+            if !addedCodexAccountCards {
+                let addedOpenAIWebItems = self.addMenuCards(to: menu, context: menuContext)
+                self.addOpenAIWebItemsIfNeeded(
+                    to: menu,
+                    currentProvider: currentProvider,
+                    context: openAIContext,
+                    addedOpenAIWebItems: addedOpenAIWebItems)
+            }
             if self.addUsageHistoryMenuItemIfNeeded(to: menu, provider: currentProvider) {
                 menu.addItem(.separator())
             }
@@ -228,11 +237,6 @@ extension StatusItemController {
         var contentStartIndex = 0
         if menu.items.first?.view is ProviderSwitcherView {
             contentStartIndex = 2
-        }
-        if menu.items.count > contentStartIndex,
-           menu.items[contentStartIndex].view is CodexAccountSwitcherView
-        {
-            contentStartIndex += 2
         }
         if menu.items.count > contentStartIndex,
            menu.items[contentStartIndex].view is TokenAccountSwitcherView
@@ -328,13 +332,6 @@ extension StatusItemController {
     private func addTokenAccountSwitcherIfNeeded(to menu: NSMenu, display: TokenAccountMenuDisplay?) {
         guard let display, display.showSwitcher else { return }
         let switcherItem = self.makeTokenAccountSwitcherItem(display: display, menu: menu)
-        menu.addItem(switcherItem)
-        menu.addItem(.separator())
-    }
-
-    private func addCodexAccountSwitcherIfNeeded(to menu: NSMenu, display: CodexAccountMenuDisplay?) {
-        guard let display else { return }
-        let switcherItem = self.makeCodexAccountSwitcherItem(display: display, menu: menu)
         menu.addItem(switcherItem)
         menu.addItem(.separator())
     }
@@ -450,6 +447,73 @@ extension StatusItemController {
         menu.addItem(.separator())
         return false
     }
+
+    @discardableResult
+    private func addCodexAccountCardsIfNeeded(
+        to menu: NSMenu,
+        display: CodexAccountMenuDisplay?,
+        width: CGFloat) -> Bool
+    {
+        guard let display, display.accounts.count > 1 else { return false }
+
+        for account in display.accounts {
+            guard let model = self.codexAccountCardModel(for: account, display: display) else { continue }
+            let identifier = "\(Self.codexAccountCardIdentifierPrefix)\(account.id)"
+            let item = self.makeMenuCardItem(
+                CodexAccountUsageCardView(
+                    accountTitle: self.codexAccountCardTitle(for: account),
+                    model: model,
+                    isActive: account.id == display.activeVisibleAccountID,
+                    width: width),
+                id: identifier,
+                width: width,
+                onClick: { [weak self, weak menu] in
+                    guard let self else { return }
+                    self.handleCodexVisibleAccountSelection(account.id, menu: menu)
+                })
+            item.target = self
+            item.action = #selector(self.selectCodexAccountCard(_:))
+            menu.addItem(item)
+        }
+
+        menu.addItem(.separator())
+        return true
+    }
+
+    private func codexAccountCardModel(
+        for account: CodexVisibleAccount,
+        display: CodexAccountMenuDisplay) -> UsageMenuCardView.Model?
+    {
+        if let cached = self.store.codexVisibleAccountSnapshots[account.id] {
+            return self.menuCardModel(
+                for: .codex,
+                snapshotOverride: cached.snapshot,
+                errorOverride: cached.error,
+                usesOverride: true)
+        }
+
+        if account.id == display.activeVisibleAccountID {
+            return self.menuCardModel(for: .codex)
+        }
+
+        return self.menuCardModel(
+            for: .codex,
+            snapshotOverride: nil,
+            errorOverride: nil,
+            usesOverride: true)
+    }
+
+    private func codexAccountCardTitle(for account: CodexVisibleAccount) -> String {
+        PersonalInfoRedactor.redactEmails(
+            in: account.menuDisplayName,
+            isEnabled: self.settings.hidePersonalInfo) ?? account.menuDisplayName
+    }
+
+    #if DEBUG
+    func _test_codexAccountCardTitle(for account: CodexVisibleAccount) -> String {
+        self.codexAccountCardTitle(for: account)
+    }
+    #endif
 
     private func addOpenAIWebItemsIfNeeded(
         to menu: NSMenu,
@@ -700,7 +764,10 @@ extension StatusItemController {
     @discardableResult
     private func handleCodexVisibleAccountSelection(_ visibleAccountID: String, menu: NSMenu?) -> Bool {
         guard self.settings.selectCodexVisibleAccount(id: visibleAccountID) else { return false }
-        if self.store.prepareCodexAccountScopedRefreshIfNeeded(), let menu {
+        let didInvalidate = self.store.prepareCodexAccountScopedRefreshIfNeeded()
+        let didApplyCached = self.store.applyCachedCodexVisibleAccountSnapshotIfAvailable(
+            visibleAccountID: visibleAccountID)
+        if didInvalidate || didApplyCached, let menu {
             self.refreshOpenMenuIfStillVisible(menu, provider: .codex)
         }
         Task { @MainActor in
@@ -767,6 +834,7 @@ extension StatusItemController {
         guard provider == .codex else { return nil }
         let projection = self.settings.codexVisibleAccountProjection
         guard projection.visibleAccounts.count > 1 else { return nil }
+        self.store.seedActiveCodexVisibleAccountSnapshotCache(visibleAccounts: projection.visibleAccounts)
         return CodexAccountMenuDisplay(
             accounts: projection.visibleAccounts,
             activeVisibleAccountID: projection.activeVisibleAccountID)
@@ -901,6 +969,40 @@ extension StatusItemController {
             return [provider]
         }
         return enabledProviders
+    }
+
+    private func shouldRefreshCodexAccountCardsOnMenuOpen(_ menu: NSMenu) -> Bool {
+        let enabledProviders = self.store.enabledProvidersForDisplay()
+        guard !enabledProviders.isEmpty else { return false }
+        let includesOverview = self.includesOverviewTab(enabledProviders: enabledProviders)
+        if self.shouldMergeIcons,
+           enabledProviders.count > 1,
+           self.resolvedSwitcherSelection(
+               enabledProviders: enabledProviders,
+               includesOverview: includesOverview) == .overview
+        {
+            return false
+        }
+
+        let provider = self.menuProvider(for: menu)
+            ?? self.resolvedMenuProvider(enabledProviders: enabledProviders)
+        guard provider == .codex else { return false }
+        return self.settings.codexVisibleAccountProjection.visibleAccounts.count > 1
+    }
+
+    private func refreshCodexAccountCardsMenuIfNeeded(_ menu: NSMenu) {
+        let visibleAccounts = self.settings.codexVisibleAccountProjection.visibleAccounts
+        guard visibleAccounts.count > 1 else { return }
+        self.store.refreshCodexVisibleAccountCards(
+            visibleAccounts: visibleAccounts,
+            selectedDidUpdate: { [weak self, weak menu] in
+                guard let self, let menu else { return }
+                self.refreshOpenMenuIfStillVisible(menu, provider: .codex)
+            },
+            didFinish: { [weak self, weak menu] in
+                guard let self, let menu else { return }
+                self.refreshOpenMenuIfStillVisible(menu, provider: .codex)
+            })
     }
 
     private func refreshMenuCardHeights(in menu: NSMenu) {
@@ -1285,13 +1387,15 @@ extension StatusItemController {
     func menuCardModel(
         for provider: UsageProvider?,
         snapshotOverride: UsageSnapshot? = nil,
-        errorOverride: String? = nil) -> UsageMenuCardView.Model?
+        errorOverride: String? = nil,
+        usesOverride: Bool = false) -> UsageMenuCardView.Model?
     {
         let target = provider ?? self.store.enabledProvidersForDisplay().first ?? .codex
         let metadata = self.store.metadata(for: target)
 
-        let snapshot = snapshotOverride ?? self.store.snapshot(for: target)
-        let surface: CodexConsumerProjection.Surface = if snapshotOverride != nil || errorOverride != nil {
+        let isOverride = usesOverride || snapshotOverride != nil || errorOverride != nil
+        let snapshot = isOverride ? snapshotOverride : self.store.snapshot(for: target)
+        let surface: CodexConsumerProjection.Surface = if isOverride {
             .overrideCard
         } else {
             .liveCard
@@ -1302,6 +1406,7 @@ extension StatusItemController {
             surface: surface,
             snapshotOverride: snapshotOverride,
             errorOverride: errorOverride,
+            usesOverride: isOverride,
             now: now)
         let credits: CreditsSnapshot?
         let creditsError: String?
@@ -1321,7 +1426,7 @@ extension StatusItemController {
                 tokenSnapshot = nil
                 tokenError = nil
             }
-        } else if target == .claude || target == .vertexai, snapshotOverride == nil {
+        } else if target == .claude || target == .vertexai, !isOverride {
             credits = nil
             creditsError = nil
             dashboard = nil
@@ -1337,7 +1442,7 @@ extension StatusItemController {
             tokenError = nil
         }
 
-        let sourceLabel = snapshotOverride == nil ? self.store.sourceLabel(for: target) : nil
+        let sourceLabel = !isOverride ? self.store.sourceLabel(for: target) : nil
         let kiloAutoMode = target == .kilo && self.settings.kiloUsageDataSource == .auto
         // Abacus uses primary for monthly credits (no secondary window)
         let paceWindow = target == .abacus ? snapshot?.primary : snapshot?.secondary
@@ -1396,6 +1501,16 @@ extension StatusItemController {
         }
 
         self.selectOverviewProvider(provider, menu: menu)
+    }
+
+    @objc private func selectCodexAccountCard(_ sender: NSMenuItem) {
+        guard let represented = sender.representedObject as? String,
+              represented.hasPrefix(Self.codexAccountCardIdentifierPrefix)
+        else {
+            return
+        }
+        let visibleAccountID = String(represented.dropFirst(Self.codexAccountCardIdentifierPrefix.count))
+        self.handleCodexVisibleAccountSelection(visibleAccountID, menu: sender.menu)
     }
 
     private func selectOverviewProvider(_ provider: UsageProvider, menu: NSMenu) {

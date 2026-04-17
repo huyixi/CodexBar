@@ -14,6 +14,7 @@ extension UsageStore {
         _ = self.lastSourceLabels
         _ = self.lastFetchAttempts
         _ = self.accountSnapshots
+        _ = self.codexVisibleAccountSnapshots
         _ = self.tokenSnapshots
         _ = self.tokenErrors
         _ = self.tokenRefreshInFlight
@@ -124,6 +125,7 @@ final class UsageStore {
     var lastSourceLabels: [UsageProvider: String] = [:]
     var lastFetchAttempts: [UsageProvider: [ProviderFetchAttempt]] = [:]
     var accountSnapshots: [UsageProvider: [TokenAccountUsageSnapshot]] = [:]
+    var codexVisibleAccountSnapshots: [String: CodexVisibleAccountUsageSnapshot] = [:]
     var tokenSnapshots: [UsageProvider: CostUsageTokenSnapshot] = [:]
     var tokenErrors: [UsageProvider: String] = [:]
     var tokenRefreshInFlight: Set<UsageProvider> = []
@@ -159,6 +161,7 @@ final class UsageStore {
     @ObservationIgnored var openAIDashboardRefreshTask: Task<Void, Never>?
     @ObservationIgnored var openAIDashboardRefreshTaskKey: String?
     @ObservationIgnored var openAIDashboardRefreshTaskToken: UUID?
+    @ObservationIgnored var codexVisibleAccountRefreshTask: Task<Void, Never>?
     @ObservationIgnored var _test_openAIDashboardCookieImportOverride: (@MainActor (
         String?,
         Bool,

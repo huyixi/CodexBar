@@ -713,6 +713,11 @@ extension StatusMenuTests {
         settings.mergeIcons = true
         settings.selectedMenuProvider = .codex
         settings.openAIWebAccessEnabled = true
+        settings._test_liveSystemCodexAccount = ObservedSystemCodexAccount(
+            email: "user@example.com",
+            codexHomePath: "/Users/test/.codex",
+            observedAt: Date())
+        defer { settings._test_liveSystemCodexAccount = nil }
 
         let registry = ProviderRegistry.shared
         if let codexMeta = registry.metadata[.codex] {
@@ -726,7 +731,11 @@ extension StatusMenuTests {
         }
 
         let fetcher = UsageFetcher()
-        let store = UsageStore(fetcher: fetcher, browserDetection: BrowserDetection(cacheTTL: 0), settings: settings)
+        let store = UsageStore(
+            fetcher: fetcher,
+            browserDetection: BrowserDetection(cacheTTL: 0),
+            settings: settings,
+            startupBehavior: .testing)
 
         let calendar = Calendar(identifier: .gregorian)
         var components = DateComponents()
@@ -779,6 +788,11 @@ extension StatusMenuTests {
         settings.mergeIcons = true
         settings.selectedMenuProvider = .codex
         settings.costUsageEnabled = true
+        settings._test_liveSystemCodexAccount = ObservedSystemCodexAccount(
+            email: "user@example.com",
+            codexHomePath: "/Users/test/.codex",
+            observedAt: Date())
+        defer { settings._test_liveSystemCodexAccount = nil }
 
         let registry = ProviderRegistry.shared
         if let codexMeta = registry.metadata[.codex] {
@@ -792,7 +806,11 @@ extension StatusMenuTests {
         }
 
         let fetcher = UsageFetcher()
-        let store = UsageStore(fetcher: fetcher, browserDetection: BrowserDetection(cacheTTL: 0), settings: settings)
+        let store = UsageStore(
+            fetcher: fetcher,
+            browserDetection: BrowserDetection(cacheTTL: 0),
+            settings: settings,
+            startupBehavior: .testing)
         store.credits = CreditsSnapshot(remaining: 100, events: [], updatedAt: Date())
         store.openAIDashboard = OpenAIDashboardSnapshot(
             signedInEmail: "user@example.com",
@@ -1118,6 +1136,11 @@ extension StatusMenuTests {
         settings.selectedMenuProvider = .codex
         settings.mergedMenuLastSelectedWasOverview = true
         settings.mergedOverviewSelectedProviders = []
+        settings._test_liveSystemCodexAccount = ObservedSystemCodexAccount(
+            email: "user@example.com",
+            codexHomePath: "/Users/test/.codex",
+            observedAt: Date())
+        defer { settings._test_liveSystemCodexAccount = nil }
 
         let registry = ProviderRegistry.shared
         for provider in UsageProvider.allCases {
@@ -1130,7 +1153,11 @@ extension StatusMenuTests {
         }
 
         let fetcher = UsageFetcher()
-        let store = UsageStore(fetcher: fetcher, browserDetection: BrowserDetection(cacheTTL: 0), settings: settings)
+        let store = UsageStore(
+            fetcher: fetcher,
+            browserDetection: BrowserDetection(cacheTTL: 0),
+            settings: settings,
+            startupBehavior: .testing)
         let controller = StatusItemController(
             store: store,
             settings: settings,

@@ -490,6 +490,108 @@ struct UsageMenuCardUsageSectionView: View {
     }
 }
 
+struct CodexAccountUsageCardView: View {
+    let accountTitle: String
+    let model: UsageMenuCardView.Model
+    let isActive: Bool
+    let width: CGFloat
+    @Environment(\.menuItemHighlighted) private var isHighlighted
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(self.accountTitle)
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: 8)
+                if self.isActive {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(MenuHighlightStyle.progressTint(
+                            self.isHighlighted,
+                            fallback: self.model.progressColor))
+                        .accessibilityLabel("Current account")
+                }
+            }
+
+            if self.displayMetrics.isEmpty {
+                Text(self.emptyStateText)
+                    .foregroundStyle(self.emptyStateColor)
+                    .font(.footnote)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                ForEach(self.displayMetrics, id: \.id) { metric in
+                    MetricRow(
+                        metric: metric,
+                        title: UsageMenuCardView.popupMetricTitle(provider: self.model.provider, metric: metric),
+                        progressColor: self.model.progressColor)
+                }
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .frame(width: self.width - 16, alignment: .leading)
+        .background {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(self.cardFill)
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .stroke(self.cardStroke, lineWidth: self.isActive ? 1.25 : 1)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .frame(width: self.width, alignment: .leading)
+    }
+
+    var displayMetrics: [UsageMenuCardView.Model.Metric] {
+        Array(self.model.metrics.prefix(2))
+    }
+
+    private var emptyStateText: String {
+        switch self.model.subtitleStyle {
+        case .loading:
+            "Refreshing..."
+        case .error:
+            "Unavailable"
+        case .info:
+            self.model.placeholder ?? self.model.subtitleText
+        }
+    }
+
+    private var emptyStateColor: Color {
+        switch self.model.subtitleStyle {
+        case .error:
+            MenuHighlightStyle.error(self.isHighlighted)
+        case .info, .loading:
+            MenuHighlightStyle.secondary(self.isHighlighted)
+        }
+    }
+
+    private var cardFill: Color {
+        if self.isHighlighted {
+            return .clear
+        }
+        if self.isActive {
+            return self.model.progressColor.opacity(0.08)
+        }
+        return Color(nsColor: .controlBackgroundColor).opacity(0.52)
+    }
+
+    private var cardStroke: Color {
+        if self.isHighlighted {
+            return MenuHighlightStyle.selectionText.opacity(0.4)
+        }
+        if self.isActive {
+            return self.model.progressColor.opacity(0.75)
+        }
+        return Color(nsColor: .separatorColor).opacity(0.72)
+    }
+}
+
 struct UsageMenuCardCreditsSectionView: View {
     let model: UsageMenuCardView.Model
     let showBottomDivider: Bool
