@@ -58,6 +58,10 @@ extension ProvidersPane {
             .filter { $0.isVisible?() ?? true }
     }
 
+    func _test_providerLinks(for provider: UsageProvider) -> [ProviderExternalLink] {
+        self.providerLinks(for: provider)
+    }
+
     func _test_tokenAccountDescriptor(for provider: UsageProvider) -> ProviderSettingsTokenAccountsDescriptor? {
         self.tokenAccountDescriptor(for: provider)
     }
@@ -162,6 +166,7 @@ enum ProvidersPaneTestHarness {
             isEnabled: enabledBinding,
             subtitle: "Subtitle",
             model: model,
+            links: [],
             settingsPickers: [descriptors.picker],
             settingsToggles: [descriptors.toggle],
             settingsFields: [descriptors.fieldPlain, descriptors.fieldSecure],

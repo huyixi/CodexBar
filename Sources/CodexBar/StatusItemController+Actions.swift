@@ -30,31 +30,6 @@ extension StatusItemController {
         self.updater.checkForUpdates(nil)
     }
 
-    @objc func openDashboard() {
-        let preferred = self.lastMenuProvider
-            ?? (self.store.isEnabled(.codex) ? .codex : self.store.enabledProviders().first)
-
-        let provider = preferred ?? .codex
-        guard let url = self.dashboardURL(for: provider) else { return }
-        NSWorkspace.shared.open(url)
-    }
-
-    func dashboardURL(for provider: UsageProvider) -> URL? {
-        if provider == .alibaba {
-            return self.settings.alibabaCodingPlanAPIRegion.dashboardURL
-        }
-
-        let meta = self.store.metadata(for: provider)
-        let urlString: String? = if provider == .claude, self.store.isClaudeSubscription() {
-            meta.subscriptionDashboardURL ?? meta.dashboardURL
-        } else {
-            meta.dashboardURL
-        }
-
-        guard let urlString else { return nil }
-        return URL(string: urlString)
-    }
-
     @objc func openCreditsPurchase() {
         let preferred = self.lastMenuProvider
             ?? (self.store.isEnabled(.codex) ? .codex : self.store.enabledProviders().first)
@@ -81,17 +56,6 @@ extension StatusItemController {
         let allowed = ["settings", "usage", "billing", "credits"]
         guard allowed.contains(where: { path.contains($0) }) else { return nil }
         return url.absoluteString
-    }
-
-    @objc func openStatusPage() {
-        let preferred = self.lastMenuProvider
-            ?? (self.store.isEnabled(.codex) ? .codex : self.store.enabledProviders().first)
-
-        let provider = preferred ?? .codex
-        let meta = self.store.metadata(for: provider)
-        let urlString = meta.statusPageURL ?? meta.statusLinkURL
-        guard let urlString, let url = URL(string: urlString) else { return }
-        NSWorkspace.shared.open(url)
     }
 
     @objc func openTerminalCommand(_ sender: NSMenuItem) {
@@ -132,22 +96,6 @@ extension StatusItemController {
         }
     }
 
-    @objc func requestCodexSystemPromotionFromMenu(_ sender: NSMenuItem) {
-        guard let rawManagedAccountID = sender.representedObject as? String,
-              let managedAccountID = UUID(uuidString: rawManagedAccountID)
-        else {
-            return
-        }
-
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            let result = await self.codexAccountPromotionCoordinator.promote(managedAccountID: managedAccountID)
-            if case let .failure(error) = result {
-                self.presentLoginAlert(title: error.title, message: error.message)
-            }
-        }
-    }
-
     @objc func runSwitchAccount(_ sender: NSMenuItem) {
         if self.loginTask != nil {
             self.loginLogger.info("Switch Account tap ignored: login already in-flight")
@@ -180,10 +128,6 @@ extension StatusItemController {
 
     @objc func showSettingsGeneral() {
         self.openSettings(tab: .general)
-    }
-
-    @objc func showSettingsAbout() {
-        self.openSettings(tab: .about)
     }
 
     func openMenuFromShortcut() {

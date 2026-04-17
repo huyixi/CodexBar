@@ -8,6 +8,7 @@ struct ProviderDetailView<SupplementaryContent: View>: View {
     @Binding var isEnabled: Bool
     let subtitle: String
     let model: UsageMenuCardView.Model
+    let links: [ProviderExternalLink]
     let settingsPickers: [ProviderSettingsPickerDescriptor]
     let settingsToggles: [ProviderSettingsToggleDescriptor]
     let settingsFields: [ProviderSettingsFieldDescriptor]
@@ -25,6 +26,7 @@ struct ProviderDetailView<SupplementaryContent: View>: View {
         isEnabled: Binding<Bool>,
         subtitle: String,
         model: UsageMenuCardView.Model,
+        links: [ProviderExternalLink],
         settingsPickers: [ProviderSettingsPickerDescriptor],
         settingsToggles: [ProviderSettingsToggleDescriptor],
         settingsFields: [ProviderSettingsFieldDescriptor],
@@ -41,6 +43,7 @@ struct ProviderDetailView<SupplementaryContent: View>: View {
         self._isEnabled = isEnabled
         self.subtitle = subtitle
         self.model = model
+        self.links = links
         self.settingsPickers = settingsPickers
         self.settingsToggles = settingsToggles
         self.settingsFields = settingsFields
@@ -117,6 +120,20 @@ struct ProviderDetailView<SupplementaryContent: View>: View {
                         }
                         ForEach(self.settingsFields) { field in
                             ProviderSettingsFieldRowView(field: field)
+                        }
+                    }
+                }
+
+                if !self.links.isEmpty {
+                    ProviderSettingsSection(title: "Links") {
+                        HStack(spacing: 10) {
+                            ForEach(self.links) { link in
+                                Button(link.title) {
+                                    NSWorkspace.shared.open(link.url)
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                            }
                         }
                     }
                 }

@@ -30,15 +30,11 @@ struct MenuDescriptor {
 
     enum MenuActionSystemImage: String {
         case refresh = "arrow.clockwise"
-        case dashboard = "chart.bar"
-        case statusPage = "waveform.path.ecg"
         case addAccount = "plus"
-        case systemAccount = "person.crop.circle"
         case switchAccount = "key"
         case openTerminal = "terminal"
         case loginToProvider = "arrow.right.square"
         case settings = "gearshape"
-        case about = "info.circle"
         case quit = "xmark.rectangle"
         case copyError = "doc.on.doc"
     }
@@ -53,15 +49,11 @@ struct MenuDescriptor {
         case installUpdate
         case refresh
         case refreshAugmentSession
-        case dashboard
-        case statusPage
         case addCodexAccount
-        case requestCodexSystemPromotion(UUID)
         case switchAccount(UsageProvider)
         case openTerminal(command: String)
         case loginToProvider(url: String)
         case settings
-        case about
         case quit
         case copyError(String)
     }
@@ -73,8 +65,6 @@ struct MenuDescriptor {
         store: UsageStore,
         settings: SettingsStore,
         account: AccountInfo,
-        managedCodexAccountCoordinator: ManagedCodexAccountCoordinator? = nil,
-        codexAccountPromotionCoordinator: CodexAccountPromotionCoordinator? = nil,
         updateReady: Bool,
         includeContextualActions: Bool = true) -> MenuDescriptor
     {
@@ -118,9 +108,7 @@ struct MenuDescriptor {
             let actions = Self.actionsSection(
                 for: provider,
                 store: store,
-                account: account,
-                managedCodexAccountCoordinator: managedCodexAccountCoordinator,
-                codexAccountPromotionCoordinator: codexAccountPromotionCoordinator)
+                account: account)
             if !actions.entries.isEmpty {
                 sections.append(actions)
             }
@@ -341,13 +329,10 @@ struct MenuDescriptor {
     private static func actionsSection(
         for provider: UsageProvider?,
         store: UsageStore,
-        account: AccountInfo,
-        managedCodexAccountCoordinator: ManagedCodexAccountCoordinator?,
-        codexAccountPromotionCoordinator: CodexAccountPromotionCoordinator?) -> Section
+        account: AccountInfo) -> Section
     {
         var entries: [Entry] = []
         let targetProvider = provider ?? store.enabledProviders().first
-        let metadata = targetProvider.map { store.metadata(for: $0) }
         let fallbackAccount = targetProvider.map { store.accountInfo(for: $0) } ?? account
         let loginContext = targetProvider.map {
             ProviderMenuLoginContext(
@@ -374,25 +359,6 @@ struct MenuDescriptor {
             }
         }
 
-        if let targetProvider {
-            let actionContext = ProviderMenuActionContext(
-                provider: targetProvider,
-                store: store,
-                settings: store.settings,
-                account: fallbackAccount,
-                managedCodexAccountCoordinator: managedCodexAccountCoordinator,
-                codexAccountPromotionCoordinator: codexAccountPromotionCoordinator)
-            ProviderCatalog.implementation(for: targetProvider)?
-                .appendActionMenuEntries(context: actionContext, entries: &entries)
-        }
-
-        if metadata?.dashboardURL != nil {
-            entries.append(.action("Usage Dashboard", .dashboard))
-        }
-        if metadata?.statusPageURL != nil || metadata?.statusLinkURL != nil {
-            entries.append(.action("Status Page", .statusPage))
-        }
-
         if let statusLine = self.statusLine(for: provider, store: store) {
             entries.append(.text(statusLine, .secondary))
         }
@@ -408,7 +374,6 @@ struct MenuDescriptor {
         entries.append(contentsOf: [
             .action("Refresh", .refresh),
             .action("Settings...", .settings),
-            .action("About CodexBar", .about),
             .action("Quit", .quit),
         ])
         return Section(entries: entries)
@@ -495,15 +460,11 @@ private enum AccountFormatter {
 extension MenuDescriptor.MenuAction {
     var systemImageName: String? {
         switch self {
-        case .installUpdate, .settings, .about, .quit:
+        case .installUpdate, .settings, .quit:
             nil
         case .refresh: MenuDescriptor.MenuActionSystemImage.refresh.rawValue
         case .refreshAugmentSession: MenuDescriptor.MenuActionSystemImage.refresh.rawValue
-        case .dashboard: MenuDescriptor.MenuActionSystemImage.dashboard.rawValue
-        case .statusPage: MenuDescriptor.MenuActionSystemImage.statusPage.rawValue
         case .addCodexAccount: MenuDescriptor.MenuActionSystemImage.addAccount.rawValue
-        case .requestCodexSystemPromotion:
-            nil
         case .switchAccount: MenuDescriptor.MenuActionSystemImage.switchAccount.rawValue
         case .openTerminal: MenuDescriptor.MenuActionSystemImage.openTerminal.rawValue
         case .loginToProvider: MenuDescriptor.MenuActionSystemImage.loginToProvider.rawValue

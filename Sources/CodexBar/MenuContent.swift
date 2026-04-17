@@ -104,14 +104,8 @@ struct MenuContent: View {
             self.actions.refreshAugmentSession()
         case .installUpdate:
             self.actions.installUpdate()
-        case .dashboard:
-            self.actions.openDashboard()
-        case .statusPage:
-            self.actions.openStatusPage()
         case .addCodexAccount:
             self.actions.addCodexAccount()
-        case .requestCodexSystemPromotion:
-            return
         case let .switchAccount(provider):
             self.actions.switchAccount(provider)
         case let .openTerminal(command):
@@ -122,8 +116,6 @@ struct MenuContent: View {
             }
         case .settings:
             self.actions.openSettings()
-        case .about:
-            self.actions.openAbout()
         case .quit:
             self.actions.quit()
         case let .copyError(message):
@@ -136,13 +128,10 @@ struct MenuActions {
     let installUpdate: () -> Void
     let refresh: () -> Void
     let refreshAugmentSession: () -> Void
-    let openDashboard: () -> Void
-    let openStatusPage: () -> Void
     let addCodexAccount: () -> Void
     let switchAccount: (UsageProvider) -> Void
     let openTerminal: (String) -> Void
     let openSettings: () -> Void
-    let openAbout: () -> Void
     let quit: () -> Void
     let copyError: (String) -> Void
 }

@@ -5,6 +5,8 @@ ALLOW_LLDB=${CODEXBAR_ALLOW_LLDB:-0}
 SIGNING_MODE=${CODEXBAR_SIGNING:-}
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ROOT"
+source "$ROOT/Scripts/ensure_xcode_developer_dir.sh"
+ensure_xcode_developer_dir
 
 # Load version info
 source "$ROOT/version.env"

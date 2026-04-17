@@ -5,6 +5,8 @@ APP_NAME="CodexBar"
 APP_IDENTITY="Developer ID Application: Peter Steinberger (Y5PE65HELJ)"
 APP_BUNDLE="CodexBar.app"
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
+source "$ROOT/Scripts/ensure_xcode_developer_dir.sh"
+ensure_xcode_developer_dir
 source "$ROOT/version.env"
 ZIP_NAME="${APP_NAME}-${MARKETING_VERSION}.zip"
 DSYM_ZIP="${APP_NAME}-${MARKETING_VERSION}.dSYM.zip"

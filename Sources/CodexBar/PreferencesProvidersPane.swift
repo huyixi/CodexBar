@@ -58,6 +58,7 @@ struct ProvidersPane: View {
                     isEnabled: self.binding(for: provider),
                     subtitle: self.providerSubtitle(provider),
                     model: self.menuCardModel(for: provider),
+                    links: self.providerLinks(for: provider),
                     settingsPickers: self.extraSettingsPickers(for: provider),
                     settingsToggles: self.extraSettingsToggles(for: provider),
                     settingsFields: self.extraSettingsFields(for: provider),
@@ -192,6 +193,10 @@ struct ProvidersPane: View {
         let detailLine = presentation.detailLine(presentationContext)
 
         return "\(detailLine)\n\(usageText)"
+    }
+
+    func providerLinks(for provider: UsageProvider) -> [ProviderExternalLink] {
+        ProviderExternalLinks.links(for: provider, settings: self.settings, store: self.store)
     }
 
     func codexAccountsSectionState(for provider: UsageProvider) -> CodexAccountsSectionState? {

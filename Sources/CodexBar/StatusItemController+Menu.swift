@@ -166,8 +166,6 @@ extension StatusItemController {
             store: self.store,
             settings: self.settings,
             account: self.account,
-            managedCodexAccountCoordinator: self.managedCodexAccountCoordinator,
-            codexAccountPromotionCoordinator: self.codexAccountPromotionCoordinator,
             updateReady: self.updater.updateStatus.isUpdateReady,
             includeContextualActions: !isOverviewSelected)
 
@@ -252,8 +250,6 @@ extension StatusItemController {
             store: self.store,
             settings: self.settings,
             account: self.account,
-            managedCodexAccountCoordinator: self.managedCodexAccountCoordinator,
-            codexAccountPromotionCoordinator: self.codexAccountPromotionCoordinator,
             updateReady: self.updater.updateStatus.isUpdateReady)
 
         let menuContext = MenuCardContext(
@@ -463,13 +459,13 @@ extension StatusItemController {
                 CodexAccountUsageCardView(
                     accountTitle: self.codexAccountCardTitle(for: account),
                     model: model,
-                    isActive: account.id == display.activeVisibleAccountID,
+                    isSystemAccount: account.id == display.liveVisibleAccountID,
                     width: width),
                 id: identifier,
                 width: width,
                 onClick: { [weak self, weak menu] in
                     guard let self else { return }
-                    self.handleCodexVisibleAccountSelection(account.id, menu: menu)
+                    self.handleCodexAccountCardSystemSelection(account.id, menu: menu)
                 })
             item.target = self
             item.action = #selector(self.selectCodexAccountCard(_:))
@@ -749,11 +745,11 @@ extension StatusItemController {
     {
         let view = CodexAccountSwitcherView(
             accounts: display.accounts,
-            selectedAccountID: display.activeVisibleAccountID,
+            selectedAccountID: display.liveVisibleAccountID ?? display.activeVisibleAccountID,
             width: self.menuCardWidth(for: self.store.enabledProvidersForDisplay(), menu: menu),
             onSelect: { [weak self, weak menu] visibleAccountID in
                 guard let self else { return }
-                self.handleCodexVisibleAccountSelection(visibleAccountID, menu: menu)
+                self.handleCodexAccountCardSystemSelection(visibleAccountID, menu: menu)
             })
         let item = NSMenuItem()
         item.view = view
@@ -783,6 +779,35 @@ extension StatusItemController {
                         self.refreshOpenMenuIfStillVisible(menu, provider: .codex)
                     })
             }
+        }
+        return true
+    }
+
+    @discardableResult
+    private func handleCodexAccountCardSystemSelection(_ visibleAccountID: String, menu: NSMenu?) -> Bool {
+        let projection = self.settings.codexVisibleAccountProjection
+        guard let account = projection.visibleAccounts.first(where: { $0.id == visibleAccountID }) else {
+            return false
+        }
+
+        if account.id == projection.liveVisibleAccountID {
+            return self.handleCodexVisibleAccountSelection(visibleAccountID, menu: menu)
+        }
+
+        guard let managedAccountID = account.storedAccountID else {
+            return self.handleCodexVisibleAccountSelection(visibleAccountID, menu: menu)
+        }
+
+        Task { @MainActor [weak self, weak menu] in
+            guard let self else { return }
+            let result = await self.codexAccountPromotionCoordinator.promote(managedAccountID: managedAccountID)
+            if case let .failure(error) = result {
+                self.presentLoginAlert(title: error.title, message: error.message)
+            }
+            if let menu {
+                self.refreshOpenMenuIfStillVisible(menu, provider: .codex)
+            }
+            self.applyIcon(phase: nil)
         }
         return true
     }
@@ -837,7 +862,8 @@ extension StatusItemController {
         self.store.seedActiveCodexVisibleAccountSnapshotCache(visibleAccounts: projection.visibleAccounts)
         return CodexAccountMenuDisplay(
             accounts: projection.visibleAccounts,
-            activeVisibleAccountID: projection.activeVisibleAccountID)
+            activeVisibleAccountID: projection.activeVisibleAccountID,
+            liveVisibleAccountID: projection.liveVisibleAccountID)
     }
 
     private func menuNeedsRefresh(_ menu: NSMenu) -> Bool {
@@ -1510,7 +1536,7 @@ extension StatusItemController {
             return
         }
         let visibleAccountID = String(represented.dropFirst(Self.codexAccountCardIdentifierPrefix.count))
-        self.handleCodexVisibleAccountSelection(visibleAccountID, menu: sender.menu)
+        self.handleCodexAccountCardSystemSelection(visibleAccountID, menu: sender.menu)
     }
 
     private func selectOverviewProvider(_ provider: UsageProvider, menu: NSMenu) {
