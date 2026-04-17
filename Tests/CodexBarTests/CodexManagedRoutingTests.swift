@@ -38,6 +38,46 @@ struct CodexManagedRoutingTests {
     }
 
     @Test
+    func `provider registry managed source override scopes codex home without mutating active source`() throws {
+        let settings = self.makeSettingsStore(suite: "CodexManagedRoutingTests-registry-override")
+        let managedAccount = ManagedCodexAccount(
+            id: UUID(),
+            email: "managed@example.com",
+            managedHomePath: "/tmp/codex-managed-override-home",
+            createdAt: 1,
+            updatedAt: 1,
+            lastAuthenticatedAt: 1)
+        let storeURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codex-managed-routing-override-\(UUID().uuidString).json")
+        let store = FileManagedCodexAccountStore(fileURL: storeURL)
+        try store.storeAccounts(ManagedCodexAccountSet(
+            version: FileManagedCodexAccountStore.currentVersion,
+            accounts: [managedAccount]))
+        settings._test_managedCodexAccountStoreURL = storeURL
+        settings.codexActiveSource = .liveSystem
+        defer {
+            settings._test_managedCodexAccountStoreURL = nil
+            try? FileManager.default.removeItem(at: storeURL)
+        }
+
+        let env = ProviderRegistry.makeEnvironment(
+            base: ["CODEX_HOME": "/tmp/live-system-home"],
+            provider: .codex,
+            settings: settings,
+            tokenOverride: nil,
+            codexActiveSourceOverride: .managedAccount(id: managedAccount.id))
+        let snapshot = ProviderRegistry.makeSettingsSnapshot(
+            settings: settings,
+            tokenOverride: nil,
+            codexActiveSourceOverride: .managedAccount(id: managedAccount.id))
+
+        #expect(env["CODEX_HOME"] == managedAccount.managedHomePath)
+        #expect(settings.codexActiveSource == .liveSystem)
+        #expect(snapshot.codex?.managedAccountStoreUnreadable == false)
+        #expect(snapshot.codex?.managedAccountTargetUnavailable == false)
+    }
+
+    @Test
     func `provider registry preserves ambient live system home when active source is live system`() {
         let settings = self.makeSettingsStore(suite: "CodexManagedRoutingTests-live-system-routing")
         let managedHomePath = "/tmp/managed-remote-home"

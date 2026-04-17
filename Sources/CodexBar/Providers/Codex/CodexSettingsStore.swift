@@ -64,19 +64,17 @@ extension SettingsStore {
     }
 
     var activeManagedCodexRemoteHomePath: String? {
-        guard case .managedAccount = self.codexResolvedActiveSource else {
-            return nil
-        }
+        self.managedCodexRemoteHomePath(for: self.codexResolvedActiveSource)
+    }
+
+    func managedCodexRemoteHomePath(for source: CodexActiveSource) -> String? {
+        guard case let .managedAccount(id) = source else { return nil }
 
         #if DEBUG
         if let override = CodexManagedRemoteHomeTestingOverride.homePath(for: self) {
             return override
         }
         #endif
-
-        guard case let .managedAccount(id) = self.codexResolvedActiveSource else {
-            return nil
-        }
 
         do {
             let accounts = try self.loadManagedCodexAccounts()
@@ -178,7 +176,13 @@ extension SettingsStore {
 
 extension SettingsStore {
     var codexAccountReconciliationSnapshot: CodexAccountReconciliationSnapshot {
-        self.codexAccountReconciler().loadSnapshot()
+        self.codexAccountReconciliationSnapshot(activeSourceOverride: nil)
+    }
+
+    func codexAccountReconciliationSnapshot(
+        activeSourceOverride: CodexActiveSource?) -> CodexAccountReconciliationSnapshot
+    {
+        self.codexAccountReconciler(activeSourceOverride: activeSourceOverride).loadSnapshot()
     }
 
     var codexVisibleAccountProjection: CodexVisibleAccountProjection {
@@ -213,8 +217,9 @@ extension SettingsStore {
         self.codexVisibleAccountProjection.source(forVisibleAccountID: id)
     }
 
-    private func codexAccountReconciler() -> DefaultCodexAccountReconciler {
+    private func codexAccountReconciler(activeSourceOverride: CodexActiveSource?) -> DefaultCodexAccountReconciler {
         let baseEnvironment = self.codexReconciliationEnvironment()
+        let activeSource = activeSourceOverride ?? self.codexPersistedActiveSource
         #if DEBUG
         let liveSystemAccountOverride = CodexManagedRemoteHomeTestingOverride.liveSystemAccount(for: self)
         let reconciliationEnvironmentOverride = CodexManagedRemoteHomeTestingOverride
@@ -224,7 +229,7 @@ extension SettingsStore {
         let unreadableStoreOverride = CodexManagedRemoteHomeTestingOverride.isUnreadable(for: self)
         guard CodexManagedRemoteHomeTestingOverride.hasAnyOverride(for: self) else {
             return DefaultCodexAccountReconciler(
-                activeSource: self.codexPersistedActiveSource,
+                activeSource: activeSource,
                 baseEnvironment: baseEnvironment,
                 managedEnvironmentBuilder: { environment, account in
                     CodexHomeScope.scopedEnvironment(base: environment, codexHome: account.managedHomePath)
@@ -254,14 +259,14 @@ extension SettingsStore {
             systemObserver: CodexManagedRemoteHomeTestingSystemObserver(
                 overrideAccount: liveSystemAccountOverride,
                 usesInjectedEnvironment: reconciliationEnvironmentOverride != nil),
-            activeSource: self.codexPersistedActiveSource,
+            activeSource: activeSource,
             baseEnvironment: baseEnvironment,
             managedEnvironmentBuilder: { environment, account in
                 CodexHomeScope.scopedEnvironment(base: environment, codexHome: account.managedHomePath)
             })
         #else
         return DefaultCodexAccountReconciler(
-            activeSource: self.codexPersistedActiveSource,
+            activeSource: activeSource,
             baseEnvironment: baseEnvironment,
             managedEnvironmentBuilder: { environment, account in
                 CodexHomeScope.scopedEnvironment(base: environment, codexHome: account.managedHomePath)
@@ -481,8 +486,12 @@ extension SettingsStore {
 #endif
 
 extension SettingsStore {
-    func codexSettingsSnapshot(tokenOverride: TokenAccountOverride?) -> ProviderSettingsSnapshot.CodexProviderSettings {
-        let reconciliationSnapshot = self.codexAccountReconciliationSnapshot
+    func codexSettingsSnapshot(
+        tokenOverride: TokenAccountOverride?,
+        codexActiveSourceOverride: CodexActiveSource? = nil) -> ProviderSettingsSnapshot.CodexProviderSettings
+    {
+        let reconciliationSnapshot = self.codexAccountReconciliationSnapshot(
+            activeSourceOverride: codexActiveSourceOverride)
         let resolvedActiveSource = CodexActiveSourceResolver.resolve(from: reconciliationSnapshot)
         return CodexProviderSettingsBuilder.make(input: CodexProviderSettingsBuilderInput(
             usageDataSource: self.codexUsageDataSource,

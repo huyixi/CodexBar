@@ -340,6 +340,7 @@ extension UsageStore {
         surface: CodexConsumerProjection.Surface,
         snapshotOverride: UsageSnapshot? = nil,
         errorOverride: String? = nil,
+        usesOverride: Bool = false,
         now: Date = Date()) -> CodexConsumerProjection?
     {
         guard provider == .codex else { return nil }
@@ -347,6 +348,7 @@ extension UsageStore {
             surface: surface,
             snapshotOverride: snapshotOverride,
             errorOverride: errorOverride,
+            usesOverride: usesOverride,
             now: now)
     }
 
@@ -354,11 +356,13 @@ extension UsageStore {
         surface: CodexConsumerProjection.Surface,
         snapshotOverride: UsageSnapshot? = nil,
         errorOverride: String? = nil,
+        usesOverride: Bool = false,
         now: Date = Date()) -> CodexConsumerProjection
     {
+        let isOverride = usesOverride || snapshotOverride != nil || errorOverride != nil
         let context = CodexConsumerProjection.Context(
-            snapshot: snapshotOverride ?? self.snapshots[.codex],
-            rawUsageError: errorOverride ?? self.errors[.codex],
+            snapshot: isOverride ? snapshotOverride : snapshotOverride ?? self.snapshots[.codex],
+            rawUsageError: isOverride ? errorOverride : errorOverride ?? self.errors[.codex],
             liveCredits: self.credits,
             rawCreditsError: self.lastCreditsError,
             liveDashboard: self.openAIDashboard,

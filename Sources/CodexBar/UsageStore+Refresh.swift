@@ -25,6 +25,9 @@ extension UsageStore {
                 self.lastSourceLabels.removeValue(forKey: provider)
                 self.lastFetchAttempts.removeValue(forKey: provider)
                 self.accountSnapshots.removeValue(forKey: provider)
+                if provider == .codex {
+                    self.clearCodexVisibleAccountSnapshotCache()
+                }
                 self.tokenSnapshots.removeValue(forKey: provider)
                 self.tokenErrors[provider] = nil
                 self.failureGates[provider]?.reset()
