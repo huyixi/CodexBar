@@ -56,7 +56,9 @@ struct OpenAIDashboardNavigationDelegateTests {
         box.delegate?.webView(webView, didCommit: nil)
         #expect(result == nil)
 
-        try? await Task.sleep(nanoseconds: UInt64((NavigationDelegate.postCommitSuccessDelay + 0.1) * 1_000_000_000))
+        for _ in 0..<100 where result == nil {
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
         box.delegate = nil
 
         switch result {

@@ -57,7 +57,8 @@ struct StatusMenuCodexSwitcherTests {
     private func makeController(
         fetcher: UsageFetcher,
         store: UsageStore,
-        settings: SettingsStore) -> StatusItemController
+        settings: SettingsStore,
+        codexAccountPromotionCoordinator: CodexAccountPromotionCoordinator? = nil) -> StatusItemController
     {
         StatusItemController(
             store: store,
@@ -65,6 +66,7 @@ struct StatusMenuCodexSwitcherTests {
             account: fetcher.loadAccountInfo(),
             updater: DisabledUpdaterController(),
             preferencesSelection: PreferencesSelection(),
+            codexAccountPromotionCoordinator: codexAccountPromotionCoordinator,
             statusBar: self.makeStatusBarForTesting())
     }
 
@@ -311,76 +313,65 @@ struct StatusMenuCodexSwitcherTests {
         let view = CodexAccountUsageCardView(
             accountTitle: "account@example.com",
             model: model,
-            isActive: true,
+            isSystemAccount: true,
             width: 310)
 
         #expect(view.displayMetrics.map(\.id) == ["session", "weekly"])
     }
 
     @Test
-    func `codex account card selection activates the visible managed account`() throws {
+    func `codex account card selection promotes the visible managed account to system`() async throws {
         self.disableMenuCardsForTesting()
-        let settings = self.makeSettings()
-        settings.statusChecksEnabled = false
-        settings.refreshFrequency = .manual
-        settings.mergeIcons = false
-        self.enableOnlyCodex(settings)
+        let container = try CodexAccountPromotionTestContainer(
+            suiteName: "StatusMenuCodexSwitcherTests-card-promotes")
+        defer { container.tearDown() }
+        self.enableOnlyCodex(container.settings)
 
         let managedAccountID = try #require(UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-111111111111"))
-        let managedAccount = ManagedCodexAccount(
+        let managedAccount = try container.createManagedAccount(
             id: managedAccountID,
-            email: "managed@example.com",
-            managedHomePath: "/tmp/managed-home",
-            createdAt: 1,
-            updatedAt: 2,
-            lastAuthenticatedAt: 2)
-        let storeURL = try self.makeManagedAccountStoreURL(accounts: [managedAccount])
-        defer {
-            settings._test_managedCodexAccountStoreURL = nil
-            settings._test_liveSystemCodexAccount = nil
-            try? FileManager.default.removeItem(at: storeURL)
-        }
+            persistedEmail: "managed@example.com",
+            authAccountID: "acct-managed")
+        try container.persistAccounts([managedAccount])
+        try container.writeLiveOAuthAuthFile(email: "live@example.com", accountID: "acct-live")
+        container.settings.codexActiveSource = .liveSystem
+        container.usageStore._setSnapshotForTesting(Self.makeSnapshot(email: "live@example.com"), provider: .codex)
 
-        settings._test_managedCodexAccountStoreURL = storeURL
-        settings._test_liveSystemCodexAccount = ObservedSystemCodexAccount(
-            email: "live@example.com",
-            codexHomePath: "/Users/test/.codex",
-            observedAt: Date())
-        settings.codexActiveSource = .liveSystem
-
-        let fetcher = UsageFetcher()
-        let store = UsageStore(
-            fetcher: fetcher,
-            browserDetection: BrowserDetection(cacheTTL: 0),
-            settings: settings,
-            startupBehavior: .testing)
-        store._setSnapshotForTesting(Self.makeSnapshot(email: "live@example.com"), provider: .codex)
-        self.installCodexProvider(on: store, strategy: StatusMenuTestCodexFetchStrategy {
-            Self.makeSnapshot(email: "managed@example.com", usedPercent: 9)
-        })
-        let controller = self.makeController(fetcher: fetcher, store: store, settings: settings)
+        let controller = self.makeController(
+            fetcher: UsageFetcher(),
+            store: container.usageStore,
+            settings: container.settings,
+            codexAccountPromotionCoordinator: CodexAccountPromotionCoordinator(service: container.makeService()))
         let menu = controller.makeMenu(for: .codex)
         controller.menuWillOpen(menu)
+        let managedVisibleAccount = try #require(container.settings.codexVisibleAccountProjection.visibleAccounts
+            .first { $0.storedAccountID == managedAccountID })
 
         let item = try #require(menu.items.first {
-            ($0.representedObject as? String) == "codexAccountCard-managed@example.com"
+            ($0.representedObject as? String) == "codexAccountCard-\(managedVisibleAccount.id)"
         })
         let action = try #require(item.action)
         let target = try #require(item.target as? StatusItemController)
         _ = target.perform(action, with: item)
 
-        #expect(settings.codexActiveSource == .managedAccount(id: managedAccountID))
+        for _ in 0..<20
+            where container.settings.codexVisibleAccountProjection.liveVisibleAccountID != managedVisibleAccount.id
+        {
+            try await Task.sleep(for: .milliseconds(25))
+        }
+
+        #expect(container.settings.codexActiveSource == .liveSystem)
+        #expect(container.settings.codexVisibleAccountProjection.liveVisibleAccountID == managedVisibleAccount.id)
+        #expect(try container.liveAuthData() == container.managedAuthData(for: managedAccount))
     }
 
     @Test
-    func `codex account card clears stale account state on the first click`() async throws {
+    func `codex account card selection follows live system account without promotion`() throws {
         self.disableMenuCardsForTesting()
         let settings = self.makeSettings()
         settings.statusChecksEnabled = false
         settings.refreshFrequency = .manual
         settings.mergeIcons = false
-        settings.costUsageEnabled = false
-        settings.codexCookieSource = .off
         self.enableOnlyCodex(settings)
 
         let managedAccountID = try #require(UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-111111111111"))
@@ -403,7 +394,7 @@ struct StatusMenuCodexSwitcherTests {
             email: "live@example.com",
             codexHomePath: "/Users/test/.codex",
             observedAt: Date())
-        settings.codexActiveSource = .liveSystem
+        settings.codexActiveSource = .managedAccount(id: managedAccountID)
 
         let fetcher = UsageFetcher()
         let store = UsageStore(
@@ -411,52 +402,20 @@ struct StatusMenuCodexSwitcherTests {
             browserDetection: BrowserDetection(cacheTTL: 0),
             settings: settings,
             startupBehavior: .testing)
-        store._setSnapshotForTesting(
-            UsageSnapshot(
-                primary: RateWindow(usedPercent: 30, windowMinutes: 300, resetsAt: nil, resetDescription: nil),
-                secondary: nil,
-                updatedAt: Date(),
-                identity: ProviderIdentitySnapshot(
-                    providerID: .codex,
-                    accountEmail: "live@example.com",
-                    accountOrganization: nil,
-                    loginMethod: "Pro")),
-            provider: .codex)
-        store.lastCodexAccountScopedRefreshGuard = store
-            .currentCodexAccountScopedRefreshGuard(preferCurrentSnapshot: false)
-
-        let blocker = BlockingStatusMenuCodexFetchStrategy()
-        self.installBlockingCodexProvider(on: store, blocker: blocker)
-
+        store._setSnapshotForTesting(Self.makeSnapshot(email: "managed@example.com"), provider: .codex)
         let controller = self.makeController(fetcher: fetcher, store: store, settings: settings)
         let menu = controller.makeMenu(for: .codex)
         controller.menuWillOpen(menu)
 
+        let liveVisibleAccountID = try #require(settings.codexVisibleAccountProjection.liveVisibleAccountID)
         let item = try #require(menu.items.first {
-            ($0.representedObject as? String) == "codexAccountCard-managed@example.com"
+            ($0.representedObject as? String) == "codexAccountCard-\(liveVisibleAccountID)"
         })
         let action = try #require(item.action)
         let target = try #require(item.target as? StatusItemController)
         _ = target.perform(action, with: item)
 
-        await blocker.waitUntilStarted()
-        #expect(settings.codexActiveSource == .managedAccount(id: managedAccountID))
-        #expect(store.snapshots[.codex] == nil)
-
-        await blocker.resume(with: .success(
-            UsageSnapshot(
-                primary: RateWindow(usedPercent: 9, windowMinutes: 300, resetsAt: nil, resetDescription: nil),
-                secondary: nil,
-                updatedAt: Date(),
-                identity: ProviderIdentitySnapshot(
-                    providerID: .codex,
-                    accountEmail: "managed@example.com",
-                    accountOrganization: nil,
-                    loginMethod: "Pro"))))
-        for _ in 0..<10 where store.snapshots[.codex]?.accountEmail(for: .codex) != "managed@example.com" {
-            try? await Task.sleep(for: .milliseconds(20))
-        }
-        #expect(store.snapshots[.codex]?.accountEmail(for: .codex) == "managed@example.com")
+        #expect(settings.codexActiveSource == .liveSystem)
     }
 
     @Test
@@ -658,62 +617,33 @@ struct StatusMenuCodexSwitcherTests {
     }
 
     @Test
-    func `codex account card can select managed row when same email rows split by identity`() throws {
+    func `codex account card promotes managed row when same email rows split by identity`() async throws {
         self.disableMenuCardsForTesting()
-        let settings = self.makeSettings()
-        settings.statusChecksEnabled = false
-        settings.refreshFrequency = .manual
-        settings.mergeIcons = false
-        self.enableOnlyCodex(settings)
+        let container = try CodexAccountPromotionTestContainer(
+            suiteName: "StatusMenuCodexSwitcherTests-card-promotes-split")
+        defer { container.tearDown() }
+        self.enableOnlyCodex(container.settings)
 
-        let managedHome = FileManager.default.temporaryDirectory.appendingPathComponent(
-            UUID().uuidString,
-            isDirectory: true)
         let managedAccountID = try #require(UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-222222222222"))
-        let managedAccount = ManagedCodexAccount(
+        let managedAccount = try container.createManagedAccount(
             id: managedAccountID,
-            email: "same@example.com",
-            managedHomePath: managedHome.path,
-            createdAt: 1,
-            updatedAt: 2,
-            lastAuthenticatedAt: 2)
-        try Self.writeCodexAuthFile(
-            homeURL: managedHome,
-            email: "same@example.com",
-            plan: "pro",
-            accountID: "account-managed")
-        let storeURL = try self.makeManagedAccountStoreURL(accounts: [managedAccount])
-        defer {
-            settings._test_managedCodexAccountStoreURL = nil
-            settings._test_liveSystemCodexAccount = nil
-            try? FileManager.default.removeItem(at: storeURL)
-            try? FileManager.default.removeItem(at: managedHome)
-        }
+            persistedEmail: "same@example.com",
+            authAccountID: "account-managed")
+        try container.persistAccounts([managedAccount])
+        try container.writeLiveOAuthAuthFile(email: "same@example.com")
+        container.settings.codexActiveSource = .liveSystem
+        container.usageStore._setSnapshotForTesting(Self.makeSnapshot(email: "same@example.com"), provider: .codex)
 
-        settings._test_managedCodexAccountStoreURL = storeURL
-        settings._test_liveSystemCodexAccount = ObservedSystemCodexAccount(
-            email: "SAME@example.com",
-            codexHomePath: "/Users/test/.codex",
-            observedAt: Date(),
-            identity: .emailOnly(normalizedEmail: "same@example.com"))
-        settings.codexActiveSource = .liveSystem
-
-        let projection = settings.codexVisibleAccountProjection
+        let projection = container.settings.codexVisibleAccountProjection
         #expect(projection.visibleAccounts.count == 2)
         let managedVisibleAccount = try #require(projection.visibleAccounts
             .first { $0.storedAccountID == managedAccountID })
 
-        let fetcher = UsageFetcher()
-        let store = UsageStore(
-            fetcher: fetcher,
-            browserDetection: BrowserDetection(cacheTTL: 0),
-            settings: settings,
-            startupBehavior: .testing)
-        store._setSnapshotForTesting(Self.makeSnapshot(email: "same@example.com"), provider: .codex)
-        self.installCodexProvider(on: store, strategy: StatusMenuTestCodexFetchStrategy {
-            Self.makeSnapshot(email: "same@example.com", usedPercent: 9)
-        })
-        let controller = self.makeController(fetcher: fetcher, store: store, settings: settings)
+        let controller = self.makeController(
+            fetcher: UsageFetcher(),
+            store: container.usageStore,
+            settings: container.settings,
+            codexAccountPromotionCoordinator: CodexAccountPromotionCoordinator(service: container.makeService()))
         let menu = controller.makeMenu(for: .codex)
         controller.menuWillOpen(menu)
 
@@ -724,52 +654,22 @@ struct StatusMenuCodexSwitcherTests {
         let target = try #require(item.target as? StatusItemController)
         _ = target.perform(action, with: item)
 
-        #expect(settings.codexActiveSource == .managedAccount(id: managedAccountID))
-    }
-}
-
-extension StatusMenuCodexSwitcherTests {
-    private static func writeCodexAuthFile(
-        homeURL: URL,
-        email: String,
-        plan: String,
-        accountID: String? = nil) throws
-    {
-        try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
-        var tokens: [String: Any] = [
-            "accessToken": "access-token",
-            "refreshToken": "refresh-token",
-            "idToken": Self.fakeJWT(email: email, plan: plan, accountID: accountID),
-        ]
-        if let accountID {
-            tokens["account_id"] = accountID
-        }
-        let auth = ["tokens": tokens]
-        let data = try JSONSerialization.data(withJSONObject: auth)
-        try data.write(to: homeURL.appendingPathComponent("auth.json"))
-    }
-
-    private static func fakeJWT(email: String, plan: String, accountID: String? = nil) -> String {
-        let header = (try? JSONSerialization.data(withJSONObject: ["alg": "none"])) ?? Data()
-        var payloadObject: [String: Any] = [
-            "email": email,
-            "chatgpt_plan_type": plan,
-        ]
-        if let accountID {
-            payloadObject["https://api.openai.com/auth"] = [
-                "chatgpt_account_id": accountID,
-            ]
-        }
-        let payload = (try? JSONSerialization.data(withJSONObject: payloadObject)) ?? Data()
-
-        func base64URL(_ data: Data) -> String {
-            data.base64EncodedString()
-                .replacingOccurrences(of: "=", with: "")
-                .replacingOccurrences(of: "+", with: "-")
-                .replacingOccurrences(of: "/", with: "_")
+        for _ in 0..<20 {
+            let updatedProjection = container.settings.codexVisibleAccountProjection
+            let liveAccount = updatedProjection.visibleAccounts
+                .first { $0.id == updatedProjection.liveVisibleAccountID }
+            if liveAccount?.storedAccountID == managedAccountID {
+                break
+            }
+            try await Task.sleep(for: .milliseconds(25))
         }
 
-        return "\(base64URL(header)).\(base64URL(payload))."
+        let updatedProjection = container.settings.codexVisibleAccountProjection
+        let liveAccount = try #require(updatedProjection.visibleAccounts
+            .first { $0.id == updatedProjection.liveVisibleAccountID })
+        #expect(container.settings.codexActiveSource == .liveSystem)
+        #expect(liveAccount.storedAccountID == managedAccountID)
+        #expect(try container.liveAuthData() == container.managedAuthData(for: managedAccount))
     }
 }
 

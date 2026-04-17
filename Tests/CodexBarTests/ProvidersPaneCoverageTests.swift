@@ -125,6 +125,19 @@ struct ProvidersPaneCoverageTests {
     }
 
     @Test
+    func `providers pane exposes external links for selected provider metadata`() {
+        let settings = Self.makeSettingsStore(suite: "ProvidersPaneCoverageTests-provider-links")
+        let store = Self.makeUsageStore(settings: settings)
+        let pane = ProvidersPane(settings: settings, store: store)
+
+        let codexLinks = pane._test_providerLinks(for: .codex)
+        let syntheticLinks = pane._test_providerLinks(for: .synthetic)
+
+        #expect(codexLinks.map(\.title) == ["Usage Dashboard", "Status Page"])
+        #expect(syntheticLinks.isEmpty)
+    }
+
+    @Test
     func `opencode manual cookie source hides cached browser trailing text`() {
         let settings = Self.makeSettingsStore(suite: "ProvidersPaneCoverageTests-opencode-manual")
         let store = Self.makeUsageStore(settings: settings)

@@ -4,6 +4,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "${ROOT_DIR}/Scripts/ensure_xcode_developer_dir.sh"
 APP_BUNDLE="${ROOT_DIR}/CodexBar.app"
 APP_PROCESS_PATTERN="CodexBar.app/Contents/MacOS/CodexBar"
 DEBUG_PROCESS_PATTERN="${ROOT_DIR}/.build/debug/CodexBar"
@@ -20,6 +21,8 @@ CLEAR_ADHOC_KEYCHAIN=0
 
 log()  { printf '%s\n' "$*"; }
 fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+
+ensure_xcode_developer_dir
 
 delete_keychain_service_items() {
   local service="$1"
