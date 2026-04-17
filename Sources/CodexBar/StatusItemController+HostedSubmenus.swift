@@ -41,14 +41,6 @@ extension StatusItemController {
             } else {
                 false
             }
-        case Self.usageHistoryChartID:
-            if let providerRawValue = placeholder.toolTip,
-               let provider = UsageProvider(rawValue: providerRawValue)
-            {
-                self.appendUsageHistoryChartItem(to: menu, provider: provider, width: width)
-            } else {
-                false
-            }
         default:
             false
         }

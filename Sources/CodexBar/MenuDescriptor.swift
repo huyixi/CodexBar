@@ -344,6 +344,7 @@ struct MenuDescriptor {
 
         // Show "Add Account" if no account, "Switch Account" if logged in
         if let targetProvider,
+           targetProvider != .codex,
            let implementation = ProviderCatalog.implementation(for: targetProvider),
            implementation.supportsLoginFlow
         {

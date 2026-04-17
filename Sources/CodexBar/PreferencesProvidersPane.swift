@@ -74,9 +74,9 @@ struct ProvidersPane: View {
                         if let state = self.codexAccountsSectionState(for: provider) {
                             CodexAccountsSectionView(
                                 state: state,
-                                setActiveVisibleAccount: { visibleAccountID in
+                                setCurrentVisibleAccount: { visibleAccountID in
                                     Task { @MainActor in
-                                        await self.selectCodexVisibleAccount(id: visibleAccountID)
+                                        await self.selectCodexCurrentAccount(id: visibleAccountID)
                                     }
                                 },
                                 reauthenticateAccount: { account in
@@ -86,11 +86,6 @@ struct ProvidersPane: View {
                                 },
                                 removeAccount: { account in
                                     self.requestManagedCodexAccountRemoval(account)
-                                },
-                                requestSystemVisibleAccount: { visibleAccountID in
-                                    Task { @MainActor in
-                                        await self.requestCodexSystemVisibleAccount(id: visibleAccountID)
-                                    }
                                 },
                                 addAccount: {
                                     Task { @MainActor in
@@ -213,31 +208,29 @@ struct ProvidersPane: View {
 
         return CodexAccountsSectionState(
             visibleAccounts: projection.visibleAccounts,
-            activeVisibleAccountID: projection.activeVisibleAccountID,
-            liveVisibleAccountID: projection.liveVisibleAccountID,
+            currentVisibleAccountID: projection.activeVisibleAccountID,
+            systemVisibleAccountID: projection.liveVisibleAccountID,
             hasUnreadableManagedAccountStore: projection.hasUnreadableAddedAccountStore,
             isAuthenticatingManagedAccount: self.managedCodexAccountCoordinator.isAuthenticatingManagedAccount,
             authenticatingManagedAccountID: self.managedCodexAccountCoordinator.authenticatingManagedAccountID,
             isRemovingManagedAccount: self.managedCodexAccountCoordinator.isRemovingManagedAccount,
             isAuthenticatingLiveAccount: self.isAuthenticatingLiveCodexAccount,
             isPromotingSystemAccount: self.codexAccountPromotionCoordinator.isPromotingSystemAccount,
-            notice: self.codexAccountsNotice ?? degradedNotice)
+            notice: self.codexAccountsNotice ?? degradedNotice ?? self.codexLegacySelectionNotice(from: projection))
     }
 
-    func selectCodexVisibleAccount(id: String) async {
+    func selectCodexCurrentAccount(id: String) async {
         self.codexAccountsNotice = nil
-        guard self.settings.selectCodexVisibleAccount(id: id) else { return }
-        await self.refreshCodexProvider()
-    }
+        let projection = self.settings.codexVisibleAccountProjection
+        guard let account = projection.visibleAccounts.first(where: { $0.id == id }) else { return }
 
-    func requestCodexSystemVisibleAccount(id: String) async {
-        self.codexAccountsNotice = nil
-        guard let account = self.settings.codexVisibleAccountProjection.visibleAccounts.first(where: { $0.id == id }),
-              let managedAccountID = account.storedAccountID
-        else {
+        if account.id == projection.liveVisibleAccountID || account.storedAccountID == nil {
+            guard self.settings.selectCodexVisibleAccount(id: id) else { return }
+            await self.refreshCodexProvider()
             return
         }
 
+        guard let managedAccountID = account.storedAccountID else { return }
         let result = await self.codexAccountPromotionCoordinator.promote(managedAccountID: managedAccountID)
         if case let .failure(error) = result {
             self.codexAccountsNotice = CodexAccountsSectionNotice(text: error.message, tone: .warning)
@@ -251,8 +244,7 @@ struct ProvidersPane: View {
         }
 
         do {
-            let account = try await self.managedCodexAccountCoordinator.authenticateManagedAccount()
-            self.selectCodexVisibleAccountForAuthenticatedManagedAccount(account)
+            _ = try await self.managedCodexAccountCoordinator.authenticateManagedAccount()
             await self.refreshCodexProvider()
         } catch {
             self.codexAccountsNotice = self.codexAccountsNotice(for: error)
@@ -512,75 +504,7 @@ struct ProvidersPane: View {
     }
 
     func menuCardModel(for provider: UsageProvider) -> UsageMenuCardView.Model {
-        let metadata = self.store.metadata(for: provider)
-        let snapshot = self.store.snapshot(for: provider)
-        let now = Date()
-        let codexProjection = self.store.codexConsumerProjectionIfNeeded(
-            for: provider,
-            surface: .liveCard,
-            now: now)
-        let credits: CreditsSnapshot?
-        let creditsError: String?
-        let dashboard: OpenAIDashboardSnapshot?
-        let dashboardError: String?
-        let tokenSnapshot: CostUsageTokenSnapshot?
-        let tokenError: String?
-        if let codexProjection {
-            credits = codexProjection.credits?.snapshot
-            creditsError = codexProjection.credits?.userFacingError
-            dashboard = nil
-            dashboardError = codexProjection.userFacingErrors.dashboard
-            tokenSnapshot = self.store.tokenSnapshot(for: provider)
-            tokenError = self.store.tokenError(for: provider)
-        } else if provider == .claude || provider == .vertexai {
-            credits = nil
-            creditsError = nil
-            dashboard = nil
-            dashboardError = nil
-            tokenSnapshot = self.store.tokenSnapshot(for: provider)
-            tokenError = self.store.tokenError(for: provider)
-        } else {
-            credits = nil
-            creditsError = nil
-            dashboard = nil
-            dashboardError = nil
-            tokenSnapshot = nil
-            tokenError = nil
-        }
-
-        // Abacus uses primary for monthly credits (no secondary window)
-        let paceWindow = provider == .abacus ? snapshot?.primary : snapshot?.secondary
-        let weeklyPace = if let codexProjection,
-                            let weekly = codexProjection.rateWindow(for: .weekly)
-        {
-            self.store.weeklyPace(provider: provider, window: weekly, now: now)
-        } else {
-            paceWindow.flatMap { window in
-                self.store.weeklyPace(provider: provider, window: window, now: now)
-            }
-        }
-        let input = UsageMenuCardView.Model.Input(
-            provider: provider,
-            metadata: metadata,
-            snapshot: snapshot,
-            codexProjection: codexProjection,
-            credits: credits,
-            creditsError: creditsError,
-            dashboard: dashboard,
-            dashboardError: dashboardError,
-            tokenSnapshot: tokenSnapshot,
-            tokenError: tokenError,
-            account: self.store.accountInfo(for: provider),
-            isRefreshing: self.store.refreshingProviders.contains(provider),
-            lastError: codexProjection?.userFacingErrors.usage ?? self.store.userFacingError(for: provider),
-            usageBarsShowUsed: self.settings.usageBarsShowUsed,
-            resetTimeDisplayStyle: self.settings.resetTimeDisplayStyle,
-            tokenCostUsageEnabled: self.settings.isCostUsageEffectivelyEnabled(for: provider),
-            showOptionalCreditsAndExtraUsage: self.settings.showOptionalCreditsAndExtraUsage,
-            hidePersonalInfo: self.settings.hidePersonalInfo,
-            weeklyPace: weeklyPace,
-            now: now)
-        return UsageMenuCardView.Model.make(input)
+        self.store.usageMenuCardModel(for: provider)
     }
 
     private func refreshCodexProvider() async {
@@ -589,8 +513,19 @@ struct ProvidersPane: View {
         }
     }
 
-    private func selectCodexVisibleAccountForAuthenticatedManagedAccount(_ account: ManagedCodexAccount) {
-        self.settings.selectAuthenticatedManagedCodexAccount(account)
+    private func codexLegacySelectionNotice(
+        from projection: CodexVisibleAccountProjection) -> CodexAccountsSectionNotice?
+    {
+        guard projection.activeVisibleAccountID != projection.liveVisibleAccountID,
+              projection.activeVisibleAccountID != nil || projection.liveVisibleAccountID != nil
+        else {
+            return nil
+        }
+
+        return CodexAccountsSectionNotice(
+            text: "Current account differs from this Mac's live system account. "
+                + "Choose a current account to converge them.",
+            tone: .secondary)
     }
 
     private func codexAccountsNotice(for error: Error) -> CodexAccountsSectionNotice {

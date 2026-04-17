@@ -123,7 +123,7 @@ struct StatusMenuCodexSwitcherTests {
     }
 
     @Test
-    func `codex menu shows account cards and add account action for multiple visible accounts`() throws {
+    func `codex menu shows account switcher and one current usage card for multiple visible accounts`() throws {
         self.disableMenuCardsForTesting()
         let settings = self.makeSettings()
         settings.statusChecksEnabled = false
@@ -166,14 +166,13 @@ struct StatusMenuCodexSwitcherTests {
 
         let projection = settings.codexVisibleAccountProjection
         let ids = self.representedIDs(in: menu)
-        let cardIDs = ids.filter { $0.hasPrefix("codexAccountCard-") }
 
         #expect(projection.visibleAccounts.map(\.email) == ["live@example.com", "managed@example.com"])
         #expect(projection.activeVisibleAccountID == "live@example.com")
-        #expect(cardIDs == ["codexAccountCard-live@example.com", "codexAccountCard-managed@example.com"])
-        #expect(ids.contains("menuCard") == false)
-        #expect(menu.items.contains { $0.view is CodexAccountSwitcherView } == false)
-        #expect(menu.items.contains { $0.title == "Add Account..." })
+        #expect(ids.contains("menuCard"))
+        #expect(ids.contains { $0.hasPrefix("codexAccountCard-") } == false)
+        #expect(menu.items.contains { $0.view is CodexAccountSwitcherView })
+        #expect(menu.items.contains { $0.title == "Add Account..." } == false)
         #expect(menu.items.contains { $0.title == "Switch Account..." } == false)
     }
 
@@ -207,21 +206,18 @@ struct StatusMenuCodexSwitcherTests {
         #expect(settings.codexVisibleAccountProjection.visibleAccounts.map(\.email) == ["solo@example.com"])
         #expect(ids.contains { $0.hasPrefix("codexAccountCard-") } == false)
         #expect(ids.contains("menuCard"))
-        #expect(menu.items.contains { $0.title == "Add Account..." })
+        #expect(menu.items.contains { $0.title == "Add Account..." } == false)
     }
 
     @Test
-    func `codex account card title redacts personal labels while preserving team workspace labels`() {
-        self.disableMenuCardsForTesting()
+    func `accounts pane titles redact personal labels while preserving team workspace labels`() {
         let settings = self.makeSettings()
         settings.hidePersonalInfo = true
-        let fetcher = UsageFetcher()
         let store = UsageStore(
-            fetcher: fetcher,
+            fetcher: UsageFetcher(),
             browserDetection: BrowserDetection(cacheTTL: 0),
             settings: settings,
             startupBehavior: .testing)
-        let controller = self.makeController(fetcher: fetcher, store: store, settings: settings)
         let managedAccountID = UUID()
         let accounts = [
             CodexVisibleAccount(
@@ -248,9 +244,22 @@ struct StatusMenuCodexSwitcherTests {
                 canRemove: true),
         ]
 
-        let titles = accounts.map { controller._test_codexAccountCardTitle(for: $0) }
+        let entries = accounts.map { account in
+            CodexAccountUsageEntry(
+                account: account,
+                model: store.usageMenuCardModel(
+                    for: .codex,
+                    snapshotOverride: nil,
+                    errorOverride: nil,
+                    usesOverride: true),
+                title: PersonalInfoRedactor.redactEmails(
+                    in: account.displayName,
+                    isEnabled: settings.hidePersonalInfo) ?? account.displayName,
+                badgeText: nil)
+        }
+        let titles = entries.map(\.title)
 
-        #expect(titles == ["Hidden", "Hidden — IDconcepts"])
+        #expect(titles == ["Hidden — Personal", "Hidden — IDconcepts"])
         #expect(titles.contains { $0.contains("@") } == false)
         #expect(accounts[0].displayName == "pl.fr@yandex.com — Personal")
         #expect(accounts[0].menuDisplayName == "pl.fr@yandex.com")
@@ -313,14 +322,14 @@ struct StatusMenuCodexSwitcherTests {
         let view = CodexAccountUsageCardView(
             accountTitle: "account@example.com",
             model: model,
-            isSystemAccount: true,
+            badgeText: "Current",
             width: 310)
 
         #expect(view.displayMetrics.map(\.id) == ["session", "weekly"])
     }
 
     @Test
-    func `codex account card selection promotes the visible managed account to system`() async throws {
+    func `codex account switcher selection promotes the visible managed account to system`() async throws {
         self.disableMenuCardsForTesting()
         let container = try CodexAccountPromotionTestContainer(
             suiteName: "StatusMenuCodexSwitcherTests-card-promotes")
@@ -346,13 +355,8 @@ struct StatusMenuCodexSwitcherTests {
         controller.menuWillOpen(menu)
         let managedVisibleAccount = try #require(container.settings.codexVisibleAccountProjection.visibleAccounts
             .first { $0.storedAccountID == managedAccountID })
-
-        let item = try #require(menu.items.first {
-            ($0.representedObject as? String) == "codexAccountCard-\(managedVisibleAccount.id)"
-        })
-        let action = try #require(item.action)
-        let target = try #require(item.target as? StatusItemController)
-        _ = target.perform(action, with: item)
+        let switcher = try #require(menu.items.compactMap { $0.view as? CodexAccountSwitcherView }.first)
+        switcher._test_select(accountID: managedVisibleAccount.id)
 
         for _ in 0..<20
             where container.settings.codexVisibleAccountProjection.liveVisibleAccountID != managedVisibleAccount.id
@@ -366,7 +370,7 @@ struct StatusMenuCodexSwitcherTests {
     }
 
     @Test
-    func `codex account card selection follows live system account without promotion`() throws {
+    func `codex account switcher selection follows live system account without promotion`() throws {
         self.disableMenuCardsForTesting()
         let settings = self.makeSettings()
         settings.statusChecksEnabled = false
@@ -408,12 +412,8 @@ struct StatusMenuCodexSwitcherTests {
         controller.menuWillOpen(menu)
 
         let liveVisibleAccountID = try #require(settings.codexVisibleAccountProjection.liveVisibleAccountID)
-        let item = try #require(menu.items.first {
-            ($0.representedObject as? String) == "codexAccountCard-\(liveVisibleAccountID)"
-        })
-        let action = try #require(item.action)
-        let target = try #require(item.target as? StatusItemController)
-        _ = target.perform(action, with: item)
+        let switcher = try #require(menu.items.compactMap { $0.view as? CodexAccountSwitcherView }.first)
+        switcher._test_select(accountID: liveVisibleAccountID)
 
         #expect(settings.codexActiveSource == .liveSystem)
     }
@@ -617,7 +617,7 @@ struct StatusMenuCodexSwitcherTests {
     }
 
     @Test
-    func `codex account card promotes managed row when same email rows split by identity`() async throws {
+    func `codex account switcher promotes managed row when same email rows split by identity`() async throws {
         self.disableMenuCardsForTesting()
         let container = try CodexAccountPromotionTestContainer(
             suiteName: "StatusMenuCodexSwitcherTests-card-promotes-split")
@@ -646,13 +646,8 @@ struct StatusMenuCodexSwitcherTests {
             codexAccountPromotionCoordinator: CodexAccountPromotionCoordinator(service: container.makeService()))
         let menu = controller.makeMenu(for: .codex)
         controller.menuWillOpen(menu)
-
-        let item = try #require(menu.items.first {
-            ($0.representedObject as? String) == "codexAccountCard-\(managedVisibleAccount.id)"
-        })
-        let action = try #require(item.action)
-        let target = try #require(item.target as? StatusItemController)
-        _ = target.perform(action, with: item)
+        let switcher = try #require(menu.items.compactMap { $0.view as? CodexAccountSwitcherView }.first)
+        switcher._test_select(accountID: managedVisibleAccount.id)
 
         for _ in 0..<20 {
             let updatedProjection = container.settings.codexVisibleAccountProjection

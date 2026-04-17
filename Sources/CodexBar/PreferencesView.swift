@@ -4,6 +4,7 @@ import SwiftUI
 enum PreferencesTab: String, Hashable {
     case general
     case providers
+    case accounts
     case display
     case advanced
     case about
@@ -14,7 +15,12 @@ enum PreferencesTab: String, Hashable {
     static let windowHeight: CGFloat = 580
 
     var preferredWidth: CGFloat {
-        self == .providers ? PreferencesTab.providersWidth : PreferencesTab.defaultWidth
+        switch self {
+        case .providers, .accounts:
+            PreferencesTab.providersWidth
+        case .general, .display, .advanced, .about, .debug:
+            PreferencesTab.defaultWidth
+        }
     }
 
     var preferredHeight: CGFloat {
@@ -66,6 +72,10 @@ struct PreferencesView: View {
                 codexAccountPromotionCoordinator: self.codexAccountPromotionCoordinator)
                 .tabItem { Label("Providers", systemImage: "square.grid.2x2") }
                 .tag(PreferencesTab.providers)
+
+            AccountsPane(settings: self.settings, store: self.store)
+                .tabItem { Label("Accounts", systemImage: "person.2") }
+                .tag(PreferencesTab.accounts)
 
             DisplayPane(settings: self.settings, store: self.store)
                 .tabItem { Label("Display", systemImage: "eye") }

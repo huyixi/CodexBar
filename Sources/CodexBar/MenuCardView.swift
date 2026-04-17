@@ -493,7 +493,7 @@ struct UsageMenuCardUsageSectionView: View {
 struct CodexAccountUsageCardView: View {
     let accountTitle: String
     let model: UsageMenuCardView.Model
-    let isSystemAccount: Bool
+    let badgeText: String?
     let width: CGFloat
     @Environment(\.menuItemHighlighted) private var isHighlighted
 
@@ -506,13 +506,18 @@ struct CodexAccountUsageCardView: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Spacer(minLength: 8)
-                if self.isSystemAccount {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.caption.weight(.semibold))
+                if let badgeText = self.badgeText {
+                    Text(badgeText)
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
                         .foregroundStyle(MenuHighlightStyle.progressTint(
                             self.isHighlighted,
                             fallback: self.model.progressColor))
-                        .accessibilityLabel("System account")
+                        .background {
+                            Capsule(style: .continuous)
+                                .fill(self.badgeFill)
+                        }
                 }
             }
 
@@ -540,7 +545,7 @@ struct CodexAccountUsageCardView: View {
         }
         .overlay {
             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .stroke(self.cardStroke, lineWidth: self.isSystemAccount ? 1.25 : 1)
+                .stroke(self.cardStroke, lineWidth: self.hasBadge ? 1.25 : 1)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
@@ -575,7 +580,7 @@ struct CodexAccountUsageCardView: View {
         if self.isHighlighted {
             return .clear
         }
-        if self.isSystemAccount {
+        if self.hasBadge {
             return self.model.progressColor.opacity(0.08)
         }
         return Color(nsColor: .controlBackgroundColor).opacity(0.52)
@@ -585,10 +590,24 @@ struct CodexAccountUsageCardView: View {
         if self.isHighlighted {
             return MenuHighlightStyle.selectionText.opacity(0.4)
         }
-        if self.isSystemAccount {
+        if self.hasBadge {
             return self.model.progressColor.opacity(0.75)
         }
         return Color(nsColor: .separatorColor).opacity(0.72)
+    }
+
+    private var badgeFill: Color {
+        if self.isHighlighted {
+            return MenuHighlightStyle.selectionText.opacity(0.15)
+        }
+        return self.model.progressColor.opacity(0.12)
+    }
+
+    private var hasBadge: Bool {
+        if let badgeText {
+            return !badgeText.isEmpty
+        }
+        return false
     }
 }
 

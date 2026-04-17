@@ -14,6 +14,7 @@ struct PreferencesPaneSmokeTests {
         _ = DisplayPane(settings: settings, store: store).body
         _ = AdvancedPane(settings: settings).body
         _ = ProvidersPane(settings: settings, store: store).body
+        _ = AccountsPane(settings: settings, store: store).body
         _ = DebugPane(settings: settings, store: store).body
         _ = AboutPane(updater: DisabledUpdaterController()).body
 
@@ -39,6 +40,7 @@ struct PreferencesPaneSmokeTests {
         _ = DisplayPane(settings: settings, store: store).body
         _ = AdvancedPane(settings: settings).body
         _ = ProvidersPane(settings: settings, store: store).body
+        _ = AccountsPane(settings: settings, store: store).body
         _ = DebugPane(settings: settings, store: store).body
         _ = AboutPane(updater: DisabledUpdaterController()).body
     }

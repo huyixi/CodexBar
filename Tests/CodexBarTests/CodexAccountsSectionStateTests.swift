@@ -6,7 +6,7 @@ import Testing
 @MainActor
 struct CodexAccountsSectionStateTests {
     @Test
-    func `system badge shows for merged live row`() {
+    func `live badge still shows for merged live row`() {
         let accountID = UUID()
         let mergedLiveAccount = CodexVisibleAccount(
             id: "merged@example.com",
@@ -19,8 +19,8 @@ struct CodexAccountsSectionStateTests {
             canRemove: true)
         let state = CodexAccountsSectionState(
             visibleAccounts: [mergedLiveAccount],
-            activeVisibleAccountID: mergedLiveAccount.id,
-            liveVisibleAccountID: mergedLiveAccount.id,
+            currentVisibleAccountID: mergedLiveAccount.id,
+            systemVisibleAccountID: mergedLiveAccount.id,
             hasUnreadableManagedAccountStore: false,
             isAuthenticatingManagedAccount: false,
             authenticatingManagedAccountID: nil,
@@ -33,81 +33,7 @@ struct CodexAccountsSectionStateTests {
     }
 
     @Test
-    func `system promotion availability uses live visible account and stored account id`() {
-        let managedAccountID = UUID()
-        let liveAccount = CodexVisibleAccount(
-            id: "live@example.com",
-            email: "live@example.com",
-            storedAccountID: nil,
-            selectionSource: .liveSystem,
-            isActive: false,
-            isLive: true,
-            canReauthenticate: true,
-            canRemove: false)
-        let managedAccount = CodexVisibleAccount(
-            id: "managed:\(managedAccountID.uuidString.lowercased())",
-            email: "managed@example.com",
-            storedAccountID: managedAccountID,
-            selectionSource: .managedAccount(id: managedAccountID),
-            isActive: true,
-            isLive: false,
-            canReauthenticate: true,
-            canRemove: true)
-        let state = CodexAccountsSectionState(
-            visibleAccounts: [liveAccount, managedAccount],
-            activeVisibleAccountID: managedAccount.id,
-            liveVisibleAccountID: liveAccount.id,
-            hasUnreadableManagedAccountStore: false,
-            isAuthenticatingManagedAccount: false,
-            authenticatingManagedAccountID: nil,
-            isRemovingManagedAccount: false,
-            isAuthenticatingLiveAccount: false,
-            isPromotingSystemAccount: false,
-            notice: nil)
-
-        #expect(state.canPromoteToSystem(liveAccount) == false)
-        #expect(state.canPromoteToSystem(managedAccount))
-    }
-
-    @Test
-    func `system promotion controls disable while conflicting work is running`() {
-        let managedAccountID = UUID()
-        let liveAccount = CodexVisibleAccount(
-            id: "live@example.com",
-            email: "live@example.com",
-            storedAccountID: nil,
-            selectionSource: .liveSystem,
-            isActive: false,
-            isLive: true,
-            canReauthenticate: true,
-            canRemove: false)
-        let managedAccount = CodexVisibleAccount(
-            id: "managed:\(managedAccountID.uuidString.lowercased())",
-            email: "managed@example.com",
-            storedAccountID: managedAccountID,
-            selectionSource: .managedAccount(id: managedAccountID),
-            isActive: true,
-            isLive: false,
-            canReauthenticate: true,
-            canRemove: true)
-        let state = CodexAccountsSectionState(
-            visibleAccounts: [liveAccount, managedAccount],
-            activeVisibleAccountID: managedAccount.id,
-            liveVisibleAccountID: liveAccount.id,
-            hasUnreadableManagedAccountStore: false,
-            isAuthenticatingManagedAccount: false,
-            authenticatingManagedAccountID: nil,
-            isRemovingManagedAccount: true,
-            isAuthenticatingLiveAccount: false,
-            isPromotingSystemAccount: false,
-            notice: nil)
-
-        #expect(state.isSystemSelectionDisabled)
-        #expect(state.canPromoteToSystem(managedAccount) == false)
-    }
-
-    @Test
-    func `system display does not fall back when no live account exists`() {
+    func `single account state uses static current row instead of picker`() {
         let managedAccountID = UUID()
         let managedAccount = CodexVisibleAccount(
             id: "managed:\(managedAccountID.uuidString.lowercased())",
@@ -120,8 +46,8 @@ struct CodexAccountsSectionStateTests {
             canRemove: true)
         let state = CodexAccountsSectionState(
             visibleAccounts: [managedAccount],
-            activeVisibleAccountID: managedAccount.id,
-            liveVisibleAccountID: nil,
+            currentVisibleAccountID: managedAccount.id,
+            systemVisibleAccountID: nil,
             hasUnreadableManagedAccountStore: false,
             isAuthenticatingManagedAccount: false,
             authenticatingManagedAccountID: nil,
@@ -130,9 +56,46 @@ struct CodexAccountsSectionStateTests {
             isPromotingSystemAccount: false,
             notice: nil)
 
-        #expect(state.systemVisibleAccount == nil)
-        #expect(state.showsSystemPicker)
-        #expect(state.systemDisplayName == "No system account")
+        #expect(state.showsCurrentPicker == false)
+        #expect(state.singleVisibleAccount?.id == managedAccount.id)
+        #expect(state.currentVisibleAccount?.id == managedAccount.id)
+    }
+
+    @Test
+    func `legacy selection notice surfaces when current and system differ`() {
+        let managedAccountID = UUID()
+        let liveAccount = CodexVisibleAccount(
+            id: "live@example.com",
+            email: "live@example.com",
+            storedAccountID: nil,
+            selectionSource: .liveSystem,
+            isActive: false,
+            isLive: true,
+            canReauthenticate: true,
+            canRemove: false)
+        let managedAccount = CodexVisibleAccount(
+            id: "managed:\(managedAccountID.uuidString.lowercased())",
+            email: "managed@example.com",
+            storedAccountID: managedAccountID,
+            selectionSource: .managedAccount(id: managedAccountID),
+            isActive: true,
+            isLive: false,
+            canReauthenticate: true,
+            canRemove: true)
+        let state = CodexAccountsSectionState(
+            visibleAccounts: [liveAccount, managedAccount],
+            currentVisibleAccountID: managedAccount.id,
+            systemVisibleAccountID: liveAccount.id,
+            hasUnreadableManagedAccountStore: false,
+            isAuthenticatingManagedAccount: false,
+            authenticatingManagedAccountID: nil,
+            isRemovingManagedAccount: false,
+            isAuthenticatingLiveAccount: false,
+            isPromotingSystemAccount: false,
+            notice: nil)
+
+        #expect(state.showsCurrentPicker)
+        #expect(state.showsLegacySelectionNotice)
     }
 
     @Test
@@ -149,8 +112,8 @@ struct CodexAccountsSectionStateTests {
             canRemove: true)
         let state = CodexAccountsSectionState(
             visibleAccounts: [managedAccount],
-            activeVisibleAccountID: managedAccount.id,
-            liveVisibleAccountID: nil,
+            currentVisibleAccountID: managedAccount.id,
+            systemVisibleAccountID: nil,
             hasUnreadableManagedAccountStore: false,
             isAuthenticatingManagedAccount: false,
             authenticatingManagedAccountID: nil,
@@ -178,8 +141,8 @@ struct CodexAccountsSectionStateTests {
             canRemove: true)
         let state = CodexAccountsSectionState(
             visibleAccounts: [managedAccount],
-            activeVisibleAccountID: managedAccount.id,
-            liveVisibleAccountID: nil,
+            currentVisibleAccountID: managedAccount.id,
+            systemVisibleAccountID: nil,
             hasUnreadableManagedAccountStore: false,
             isAuthenticatingManagedAccount: false,
             authenticatingManagedAccountID: nil,
