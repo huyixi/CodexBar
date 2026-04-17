@@ -78,8 +78,8 @@ extension ProvidersPane {
         self.codexAccountsSectionState(for: .codex)
     }
 
-    func _test_selectCodexVisibleAccount(id: String) async {
-        await self.selectCodexVisibleAccount(id: id)
+    func _test_selectCodexCurrentAccount(id: String) async {
+        await self.selectCodexCurrentAccount(id: id)
     }
 
     func _test_addManagedCodexAccount() async {
@@ -88,10 +88,6 @@ extension ProvidersPane {
 
     func _test_reauthenticateCodexAccount(_ account: CodexVisibleAccount) async {
         await self.reauthenticateCodexAccount(account)
-    }
-
-    func _test_requestCodexSystemVisibleAccount(id: String) async {
-        await self.requestCodexSystemVisibleAccount(id: id)
     }
 }
 

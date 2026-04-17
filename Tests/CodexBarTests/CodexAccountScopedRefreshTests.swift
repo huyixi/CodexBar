@@ -839,7 +839,7 @@ struct CodexAccountScopedRefreshTests {
     }
 
     @Test
-    func `settings codex account selection refreshes credits on the first switch`() async throws {
+    func `selecting codex visible account refreshes credits on the first switch`() async throws {
         let settings = self.makeSettingsStore(suite: "CodexAccountScopedRefreshTests-settings-selection")
         settings.refreshFrequency = .manual
         settings.codexCookieSource = .off
@@ -871,8 +871,8 @@ struct CodexAccountScopedRefreshTests {
         store._test_codexCreditsLoaderOverride = { self.credits(remaining: 55) }
         defer { store._test_codexCreditsLoaderOverride = nil }
 
-        let pane = ProvidersPane(settings: settings, store: store)
-        await pane._test_selectCodexVisibleAccount(id: "managed@example.com")
+        #expect(settings.selectCodexVisibleAccount(id: "managed@example.com"))
+        await store.refreshCodexAccountScopedState(allowDisabled: true)
 
         #expect(settings.codexActiveSource == .managedAccount(id: managedAccountID))
         #expect(store.snapshots[.codex]?.accountEmail(for: .codex) == "managed@example.com")

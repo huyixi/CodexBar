@@ -23,8 +23,8 @@ struct CodexAccountsSectionNotice: Equatable {
 
 struct CodexAccountsSectionState: Equatable {
     let visibleAccounts: [CodexVisibleAccount]
-    let activeVisibleAccountID: String?
-    let liveVisibleAccountID: String?
+    let currentVisibleAccountID: String?
+    let systemVisibleAccountID: String?
     let hasUnreadableManagedAccountStore: Bool
     let isAuthenticatingManagedAccount: Bool
     let authenticatingManagedAccountID: UUID?
@@ -33,7 +33,7 @@ struct CodexAccountsSectionState: Equatable {
     let isPromotingSystemAccount: Bool
     let notice: CodexAccountsSectionNotice?
 
-    var showsActivePicker: Bool {
+    var showsCurrentPicker: Bool {
         self.visibleAccounts.count > 1
     }
 
@@ -41,17 +41,9 @@ struct CodexAccountsSectionState: Equatable {
         self.visibleAccounts.count == 1 ? self.visibleAccounts.first : nil
     }
 
-    var systemVisibleAccount: CodexVisibleAccount? {
-        guard let liveVisibleAccountID else { return nil }
-        return self.visibleAccounts.first { $0.id == liveVisibleAccountID }
-    }
-
-    var showsSystemPicker: Bool {
-        self.visibleAccounts.count > 1 || (self.liveVisibleAccountID == nil && !self.visibleAccounts.isEmpty)
-    }
-
-    var systemDisplayName: String {
-        self.systemVisibleAccount?.displayName ?? "No system account"
+    var currentVisibleAccount: CodexVisibleAccount? {
+        guard let currentVisibleAccountID else { return nil }
+        return self.visibleAccounts.first { $0.id == currentVisibleAccountID }
     }
 
     var canAddAccount: Bool {
@@ -73,18 +65,9 @@ struct CodexAccountsSectionState: Equatable {
         account.isLive
     }
 
-    var isSystemSelectionDisabled: Bool {
-        self.hasUnreadableManagedAccountStore ||
-            self.isAuthenticatingManagedAccount ||
-            self.isRemovingManagedAccount ||
-            self.isAuthenticatingLiveAccount ||
-            self.isPromotingSystemAccount
-    }
-
-    func canPromoteToSystem(_ account: CodexVisibleAccount) -> Bool {
-        guard self.isSystemSelectionDisabled == false else { return false }
-        guard account.id != self.liveVisibleAccountID else { return false }
-        return account.storedAccountID != nil
+    var showsLegacySelectionNotice: Bool {
+        self.currentVisibleAccountID != self.systemVisibleAccountID &&
+            (self.currentVisibleAccountID != nil || self.systemVisibleAccountID != nil)
     }
 
     func canReauthenticate(_ account: CodexVisibleAccount) -> Bool {
@@ -125,18 +108,17 @@ struct CodexAccountsSectionState: Equatable {
 @MainActor
 struct CodexAccountsSectionView: View {
     let state: CodexAccountsSectionState
-    let setActiveVisibleAccount: (String) -> Void
+    let setCurrentVisibleAccount: (String) -> Void
     let reauthenticateAccount: (CodexVisibleAccount) -> Void
     let removeAccount: (CodexVisibleAccount) -> Void
-    let requestSystemVisibleAccount: (String) -> Void
     let addAccount: () -> Void
 
     var body: some View {
         ProviderSettingsSection(title: "Accounts") {
-            if let selection = self.activeSelectionBinding {
+            if let selection = self.currentSelectionBinding {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        Text("Active")
+                        Text("Current")
                             .font(.subheadline.weight(.semibold))
                             .frame(width: ProviderSettingsMetrics.pickerLabelWidth, alignment: .leading)
 
@@ -152,11 +134,9 @@ struct CodexAccountsSectionView: View {
                         Spacer(minLength: 0)
                     }
 
-                    Text("Choose which Codex account CodexBar should follow.")
+                    Text("Choose which Codex account CodexBar should use right now.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
-
-                    self.systemRow(selection: self.systemSelectionBinding)
                 }
                 .disabled(
                     self.state.isAuthenticatingManagedAccount ||
@@ -175,8 +155,6 @@ struct CodexAccountsSectionView: View {
 
                         Spacer(minLength: 0)
                     }
-
-                    self.systemRow(selection: nil)
                 }
             }
 
@@ -215,67 +193,13 @@ struct CodexAccountsSectionView: View {
         }
     }
 
-    private var activeSelectionBinding: Binding<String>? {
-        guard self.state.showsActivePicker else { return nil }
-        let fallbackID = self.state.activeVisibleAccountID ?? self.state.visibleAccounts.first?.id
+    private var currentSelectionBinding: Binding<String>? {
+        guard self.state.showsCurrentPicker else { return nil }
+        let fallbackID = self.state.currentVisibleAccountID ?? self.state.visibleAccounts.first?.id
         guard let fallbackID else { return nil }
         return Binding(
-            get: { self.state.activeVisibleAccountID ?? fallbackID },
-            set: { self.setActiveVisibleAccount($0) })
-    }
-
-    private var systemSelectionBinding: Binding<String>? {
-        guard self.state.showsSystemPicker else { return nil }
-        guard let liveVisibleAccountID = self.state.liveVisibleAccountID else { return nil }
-        return Binding(
-            get: { self.state.liveVisibleAccountID ?? liveVisibleAccountID },
-            set: { self.requestSystemVisibleAccount($0) })
-    }
-
-    @ViewBuilder
-    private func systemRow(selection: Binding<String>?) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text("System")
-                .font(.subheadline.weight(.semibold))
-                .frame(width: ProviderSettingsMetrics.pickerLabelWidth, alignment: .leading)
-
-            if let selection {
-                Picker("", selection: selection) {
-                    ForEach(self.state.visibleAccounts) { account in
-                        Text(account.displayName)
-                            .tag(account.id)
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .controlSize(.small)
-                .disabled(self.state.isSystemSelectionDisabled)
-            } else if self.state.showsSystemPicker {
-                Menu {
-                    ForEach(self.state.visibleAccounts) { account in
-                        Button(account.displayName) {
-                            self.requestSystemVisibleAccount(account.id)
-                        }
-                        .disabled(self.state.canPromoteToSystem(account) == false)
-                    }
-                } label: {
-                    Text(self.state.systemDisplayName)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                .disabled(self.state.isSystemSelectionDisabled)
-            } else {
-                Text(self.state.systemDisplayName)
-                    .font(.subheadline)
-                    .foregroundStyle(self.state.systemVisibleAccount == nil ? .secondary : .primary)
-            }
-
-            Spacer(minLength: 0)
-        }
-
-        Text("The default Codex account on this Mac.")
-            .font(.footnote)
-            .foregroundStyle(.secondary)
+            get: { self.state.currentVisibleAccountID ?? fallbackID },
+            set: { self.setCurrentVisibleAccount($0) })
     }
 }
 

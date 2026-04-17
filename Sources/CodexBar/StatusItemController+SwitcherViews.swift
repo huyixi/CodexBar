@@ -1099,5 +1099,12 @@ final class CodexAccountSwitcherView: NSView {
     func _test_buttonToolTips() -> [String?] {
         self.buttons.map(\.toolTip)
     }
+
+    func _test_select(accountID: String) {
+        guard self.accounts.contains(where: { $0.id == accountID }) else { return }
+        self.selectedAccountID = accountID
+        self.updateButtonStyles()
+        self.onSelect(accountID)
+    }
     #endif
 }

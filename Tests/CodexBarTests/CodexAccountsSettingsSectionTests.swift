@@ -52,7 +52,7 @@ struct CodexAccountsSettingsSectionTests {
         let state = try #require(pane._test_codexAccountsSectionState())
 
         #expect(state.visibleAccounts.count == 1)
-        #expect(state.showsActivePicker == false)
+        #expect(state.showsCurrentPicker == false)
         #expect(state.singleVisibleAccount?.email == "solo@example.com")
     }
 
@@ -122,11 +122,11 @@ struct CodexAccountsSettingsSectionTests {
         settings.codexActiveSource = .managedAccount(id: managedAccount.id)
 
         let pane = ProvidersPane(settings: settings, store: store)
-        await pane._test_selectCodexVisibleAccount(id: "same@example.com")
+        await pane._test_selectCodexCurrentAccount(id: "same@example.com")
 
         #expect(settings.codexActiveSource == .liveSystem)
         let state = try #require(pane._test_codexAccountsSectionState())
-        #expect(state.activeVisibleAccountID == "same@example.com")
+        #expect(state.currentVisibleAccountID == "same@example.com")
     }
 
     @Test
@@ -174,11 +174,12 @@ struct CodexAccountsSettingsSectionTests {
         let managedVisibleAccount = try #require(initialState.visibleAccounts
             .first { $0.storedAccountID == managedAccount.id })
 
-        await pane._test_selectCodexVisibleAccount(id: managedVisibleAccount.id)
+        await pane._test_selectCodexCurrentAccount(id: managedVisibleAccount.id)
 
-        #expect(settings.codexActiveSource == .managedAccount(id: managedAccount.id))
+        #expect(settings.codexActiveSource == .liveSystem)
         let updatedState = try #require(pane._test_codexAccountsSectionState())
-        #expect(updatedState.activeVisibleAccountID == managedVisibleAccount.id)
+        #expect(updatedState.currentVisibleAccountID == managedVisibleAccount.id)
+        #expect(updatedState.systemVisibleAccountID == managedVisibleAccount.id)
     }
 
     @Test
@@ -230,7 +231,7 @@ struct CodexAccountsSettingsSectionTests {
     }
 
     @Test
-    func `adding managed codex account auto selects the merged live row`() async throws {
+    func `adding managed codex account keeps current live row when identity merges`() async throws {
         let settings = Self.makeSettingsStore(suite: "CodexAccountsSettingsSectionTests-add-merged")
         let store = Self.makeUsageStore(settings: settings)
         settings._test_liveSystemCodexAccount = ObservedSystemCodexAccount(
@@ -248,11 +249,11 @@ struct CodexAccountsSettingsSectionTests {
 
         #expect(settings.codexActiveSource == .liveSystem)
         let state = try #require(pane._test_codexAccountsSectionState())
-        #expect(state.activeVisibleAccountID == "same@example.com")
+        #expect(state.currentVisibleAccountID == "same@example.com")
     }
 
     @Test
-    func `adding managed codex account selects the new managed account when email differs`() async throws {
+    func `adding managed codex account keeps current account when email differs`() async throws {
         let settings = Self.makeSettingsStore(suite: "CodexAccountsSettingsSectionTests-add-managed")
         let store = Self.makeUsageStore(settings: settings)
         settings._test_liveSystemCodexAccount = ObservedSystemCodexAccount(
@@ -268,12 +269,10 @@ struct CodexAccountsSettingsSectionTests {
 
         await pane._test_addManagedCodexAccount()
 
-        guard case .managedAccount = settings.codexActiveSource else {
-            Issue.record("Expected the new managed account to become active")
-            return
-        }
+        #expect(settings.codexActiveSource == .liveSystem)
         let state = try #require(pane._test_codexAccountsSectionState())
-        #expect(state.activeVisibleAccountID == "managed@example.com")
+        #expect(state.currentVisibleAccountID == "live@example.com")
+        #expect(state.visibleAccounts.map(\.email) == ["live@example.com", "managed@example.com"])
     }
 
     private static func makeManagedCoordinator(

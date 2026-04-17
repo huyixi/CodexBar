@@ -57,6 +57,6 @@ struct TokenAccountMenuDisplay {
 
 struct CodexAccountMenuDisplay: Equatable {
     let accounts: [CodexVisibleAccount]
-    let activeVisibleAccountID: String?
-    let liveVisibleAccountID: String?
+    let currentVisibleAccountID: String?
+    let systemVisibleAccountID: String?
 }

@@ -79,6 +79,67 @@ struct StatusMenuTests {
         menu.items.compactMap { $0.representedObject as? String }
     }
 
+    private func menuContainsRepresentedID(_ id: String, in menu: NSMenu) -> Bool {
+        menu.items.contains { item in
+            (item.representedObject as? String) == id ||
+                item.submenu.map { self.menuContainsRepresentedID(id, in: $0) } == true
+        }
+    }
+
+    @Test
+    func `status menu omits subscription utilization even when plan history exists`() throws {
+        self.disableMenuCardsForTesting()
+        let settings = self.makeSettings()
+        settings.statusChecksEnabled = false
+        settings.refreshFrequency = .manual
+        settings.mergeIcons = true
+        settings.selectedMenuProvider = .codex
+        settings.mergedMenuLastSelectedWasOverview = false
+
+        let registry = ProviderRegistry.shared
+        for provider in UsageProvider.allCases {
+            guard let metadata = registry.metadata[provider] else { continue }
+            let shouldEnable = provider == .codex || provider == .claude
+            settings.setProviderEnabled(provider: provider, metadata: metadata, enabled: shouldEnable)
+        }
+
+        let fetcher = UsageFetcher()
+        let store = UsageStore(fetcher: fetcher, browserDetection: BrowserDetection(cacheTTL: 0), settings: settings)
+        let snapshot = UsageStorePlanUtilizationTests.makeSnapshot(provider: .codex, email: "codex@example.com")
+        let accountKey = try #require(
+            UsageStore._planUtilizationAccountKeyForTesting(provider: .codex, snapshot: snapshot))
+        store._setSnapshotForTesting(snapshot, provider: .codex)
+        store.planUtilizationHistory[.codex] = PlanUtilizationHistoryBuckets(
+            preferredAccountKey: accountKey,
+            accounts: [
+                accountKey: [
+                    planSeries(name: .weekly, windowMinutes: 10080, entries: [
+                        planEntry(at: Date(timeIntervalSince1970: 1_700_000_000), usedPercent: 64),
+                    ]),
+                ],
+            ])
+
+        let controller = StatusItemController(
+            store: store,
+            settings: settings,
+            account: fetcher.loadAccountInfo(),
+            updater: DisabledUpdaterController(),
+            preferencesSelection: PreferencesSelection(),
+            statusBar: self.makeStatusBarForTesting())
+
+        let menu = controller.makeMenu()
+        controller.menuWillOpen(menu)
+
+        #expect(!self.representedIDs(in: menu).contains("usageHistorySubmenu"))
+        #expect(!self.menuContainsRepresentedID("usageHistoryChart", in: menu))
+
+        controller.menuContentVersion &+= 1
+        controller.refreshOpenMenusIfNeeded()
+
+        #expect(!self.representedIDs(in: menu).contains("usageHistorySubmenu"))
+        #expect(!self.menuContainsRepresentedID("usageHistoryChart", in: menu))
+    }
+
     @Test
     func `remembers provider when menu opens`() {
         self.disableMenuCardsForTesting()
